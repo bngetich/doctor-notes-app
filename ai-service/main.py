@@ -1,9 +1,7 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-
-
-class NoteRequest(BaseModel):
-    text: str
+from routes.summarize_routes import router as summarize_router
+from routes.extract_routes import router as extract_router
+from routes.fhir_routes import router as fhir_router
 
 app = FastAPI(title="AI Clinical Notes Service")
 
@@ -11,17 +9,9 @@ app = FastAPI(title="AI Clinical Notes Service")
 def health_check():
     return {"status": "ok", "message": "AI service running"}
 
-@app.post("/analyze")
-def analyze_text(request: NoteRequest):
-    text = request.text
+app.include_router(summarize_router)
+app.include_router(extract_router)
+app.include_router(fhir_router)
 
-    #Mock "AI" logic
-    summary = f"Clinical summary: {text}"
-    response = {
-        "summary": summary,
-        "diagnoses": ["Type 2 Diabetes"],
-        "symptoms": ["fatigue"],
-        "medications": ["Metformin"]
-    }
-    return response
+
 

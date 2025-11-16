@@ -1,4 +1,4 @@
-# 🩺 LLM-Powered Clinical Note Structuring App
+# 🩺 LLM-Powered Clinical Note App
 
 This is a prototype application that captures doctor-patient encounters, uses a Large Language Model (LLM) to extract clinical entities, maps them to standardized medical codes (e.g., SNOMED CT, ICD-10), and outputs the data as FHIR-compliant resources.
 
