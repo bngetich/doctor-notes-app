@@ -1,115 +1,141 @@
 # 🩺 LLM-Powered Clinical Note App
 
-This is a prototype application that captures doctor-patient encounters, uses a Large Language Model (LLM) to extract clinical entities, maps them to standardized medical codes (e.g., SNOMED CT, ICD-10), and outputs the data as FHIR-compliant resources.
+This application converts unstructured clinical text into structured medical data using a two-step LLM pipeline (extraction → FHIR). It is designed to power doctor-patient encounter documentation, EHR integration, and AI-assisted clinical workflows.
 
 ## 🚀 Overview
 
-- **Voice Input**: Doctors can upload voice recordings of clinical notes
-- **LLM Processing**: Transcribes and extracts relevant clinical entities
-- **Medical Coding**: Maps entities to SNOMED CT, ICD-10, or other coding systems
-- **FHIR Output**: Produces structured FHIR resources for interoperability
+- **Text Input**: Clinicians enter or upload clinical text  
+- **Summarization**: LLM generates a human-readable clinical summary  
+- **Entity Extraction**: Structured entities (conditions, symptoms, medications, procedures) are extracted  
+- **FHIR Conversion**: Extracted entities are transformed into a valid FHIR Bundle  
+
+This architecture follows the method validated in recent research:  
+✔ Step 1 — Extract clinical entities  
+✔ Step 2 — Convert to FHIR resources  
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: React
-- **Backend**: FastAPI (Python)
-- **LLM/NLP**: (Pluggable, placeholder for Whisper + entity mapping)
-- **Data Standardization**: SNOMED CT, ICD-10, FHIR
+- **Backend**: FastAPI (Python)  
+- **LLM/NLP**: Placeholder for OpenAI / local LLMs  
+- **Data Standards**: SNOMED CT, ICD-10, HL7 FHIR  
+- **Frontend**: React (planned)  
 
 ## 📁 Project Structure
 
 ```
 doctor-notes-app/
-├── ai-service/             # FastAPI backend
-│   ├── main.py             # Entry point
-│   ├── routes/             # API endpoints (analyze, fhir, audio)
-│   ├── services/           # Business logic modules
-│   ├── models/             # Pydantic models
-│   └── requirements.txt    # Python dependencies
-├── frontend/               # React app (planned)
-├── docs/                   # Documentation
-├── .gitignore
+├── ai-service/              
+│   ├── main.py              
+│   ├── routes/              
+│   │   ├── summarize_routes.py
+│   │   ├── extract_routes.py
+│   │   └── fhir_routes.py
+│   ├── services/            
+│   │   ├── summarizer_service.py
+│   │   ├── extractor_service.py
+│   │   └── fhir_service.py
+│   ├── models/              
+│   │   ├── note_models.py
+│   │   ├── extract_models.py
+│   │   └── fhir_models.py
+│   └── requirements.txt      
+├── frontend/                # React app (planned)
+├── docs/                    # Documentation
 └── README.md
 ```
 
 ## ⚙️ Setup
 
-### 🚀 Backend (FastAPI)
+### Backend (FastAPI)
 
 ```bash
 cd ai-service
 python3 -m venv venv
 source venv/Scripts/activate    # Windows Git Bash
-# Or: venv\Scripts\activate     # Windows CMD/PowerShell
+# or: venv\Scripts\activate   # Windows CMD/PowerShell
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-**Access:**
--  [http://127.0.0.1:8000](http://127.0.0.1:8000) → Health check  
--  [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) → Interactive API docs (Swagger UI)  
--  [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc) → Alternative API docs (ReDoc)
+**Access:**  
+- **/ →** Health check  
+- **/docs →** Swagger UI  
+- **/redoc →** ReDoc  
 
 ## 📡 API Endpoints
 
 | Route | Method | Description | Status |
-|-------|---------|-------------|---------|
+|-------|--------|-------------|--------|
 | `/` | GET | Health check | ✅ Ready |
-| `/analyze` | POST | Summarize and extract structured text |  Planned |
-| `/fhir` | POST | Generate mock FHIR Observation |  Planned |
-| `/audio/upload` | POST | Upload audio file (mock transcription) |  Planned |
+| `/summarize` | POST | Generate clinical summary from free text | ✅ Ready |
+| `/extract` | POST | Extract structured clinical entities | ✅ Ready |
+| `/fhir` | POST | Convert entities into a FHIR Bundle | ✅ Ready |
+| `/audio/upload` | POST | Upload audio for transcription | ◻️ Planned |
 
-## 📄 Example Request (Planned)
+## 📄 Example Requests
 
-```bash
-POST /analyze
+### 📝 Summarization
+
+```
+POST /summarize
 ```
 
-**Request Body:**
 ```json
 {
   "text": "Patient with diabetes on metformin."
 }
 ```
 
-**Response:**
+### 🔍 Extraction
+
+```
+POST /extract
+```
+
 ```json
 {
-  "summary": "Clinical summary: Patient with diabetes treated with metformin.",
-  "diagnoses": ["Type 2 Diabetes"],
-  "symptoms": ["fatigue"],
-  "medications": ["Metformin"]
+  "conditions": ["Type 2 Diabetes"],
+  "symptoms": [{ "name": "fatigue", "duration": "3 weeks" }],
+  "medications": [{ "name": "Metformin", "dose": "500mg", "frequency": "daily" }],
+  "procedures": []
 }
 ```
 
-## 📁 Upload Flow (Future)
+### 🏥 FHIR Generation
 
-1.  Doctor records or uploads an `.mp3`/`.wav` file
-2.  Audio sent to `/audio/upload`
-3.  Server transcribes and extracts structured clinical data
-4. ✅ Returns mapped entities and FHIR resource JSON
+```
+POST /fhir
+```
+
+Produces a **FHIR Bundle** containing Condition, Observation, MedicationStatement, and Procedure resources.
+
+## 📁 Planned Upload Flow
+
+1. Doctor uploads audio  
+2. `/audio/upload` → Whisper (future)  
+3. System extracts entities  
+4. System returns summary + extracted entities + FHIR Bundle  
 
 ## 🚀 Future Enhancements
 
--  Integrate OpenAI Whisper or WhisperX for real transcription
--  Use scispaCy or MedCAT for medical entity recognition
-- ✏️ Add UI for editing structured output
--  Support OAuth2 for secure access
--  Store FHIR bundles in a compatible backend (e.g. HAPI FHIR server)
-- ⚛️ Build React frontend for better UX
+- Integrate OpenAI Whisper or WhisperX  
+- Use MedCAT or scispaCy for medical NER  
+- Auto-map to SNOMED CT + ICD-10  
+- Build a React clinician UI  
+- Add `/pipeline` endpoint (text → extract → fhir in one call)  
+- Add OAuth2 + JWT authentication  
+- Support export to FHIR servers (e.g., HAPI, Google FHIR, Firely)  
 
-## 🚀 Development Progress
+## 📈 Development Progress
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Phase 1 |  In Progress | FastAPI backend structure |
-| Phase 2 | ⚪ Planned | LLM integration for summarization |
-| Phase 3 | ⚪ Planned | FHIR generation & medical coding |
-| Phase 4 | ⚪ Planned | Audio input & frontend |
+| Phase 1 | ✅ Complete | Backend architecture + routing |
+| Phase 2 | 🔄 In Progress | LLM summarization + extraction |
+| Phase 3 | 🔄 In Progress | FHIR Bundle generation |
+| Phase 4 | ⚪ Planned | Audio input + frontend |
 
-**Current work:** [Design a Service that Summarizes Patient Notes](./docs/plan.md)
-
-## 📄 Documentation
+## 📚 Documentation
 
 - [Architecture Overview](./docs/architecture.md)
 - [Development Plan](./docs/plan.md)
