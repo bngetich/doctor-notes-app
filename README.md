@@ -1,6 +1,6 @@
 # 🩺 LLM-Powered Clinical Note App
 
-This application converts unstructured clinical text into structured medical data using a two-step LLM pipeline (extraction → FHIR). It is designed to power doctor-patient encounter documentation, EHR integration, and AI-assisted clinical workflows.
+This application converts unstructured clinical text into structured medical data using a full LLM pipeline (summarization → extraction → FHIR). It is designed to power doctor‑patient encounter documentation, EHR integration, and AI-assisted clinical workflows.
 
 ## 🚀 Overview
 
@@ -8,8 +8,9 @@ This application converts unstructured clinical text into structured medical dat
 - **Summarization**: LLM generates a human-readable clinical summary  
 - **Entity Extraction**: Structured entities (conditions, symptoms, medications, procedures) are extracted  
 - **FHIR Conversion**: Extracted entities are transformed into a valid FHIR Bundle  
+- **Pipeline Mode**: Single endpoint that performs the full sequence in one call  
 
-This architecture follows the method validated in recent research:  
+This architecture follows the method validated in recent clinical NLP research:  
 ✔ Step 1 — Extract clinical entities  
 ✔ Step 2 — Convert to FHIR resources  
 
@@ -29,18 +30,21 @@ doctor-notes-app/
 │   ├── routes/              
 │   │   ├── summarize_routes.py
 │   │   ├── extract_routes.py
-│   │   └── fhir_routes.py
+│   │   ├── fhir_routes.py
+│   │   └── pipeline_routes.py
 │   ├── services/            
 │   │   ├── summarizer_service.py
 │   │   ├── extractor_service.py
-│   │   └── fhir_service.py
+│   │   ├── fhir_service.py
+│   │   └── pipeline_service.py
 │   ├── models/              
 │   │   ├── note_models.py
 │   │   ├── extract_models.py
-│   │   └── fhir_models.py
+│   │   ├── fhir_models.py
+│   │   └── pipeline_models.py
 │   └── requirements.txt      
-├── frontend/                # React app (planned)
-├── docs/                    # Documentation
+├── frontend/                
+├── docs/                    
 └── README.md
 ```
 
@@ -52,15 +56,15 @@ doctor-notes-app/
 cd ai-service
 python3 -m venv venv
 source venv/Scripts/activate    # Windows Git Bash
-# or: venv\Scripts\activate   # Windows CMD/PowerShell
+# or: venv\Scripts\activate   # CMD/PowerShell
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
 **Access:**  
-- **/ →** Health check  
-- **/docs →** Swagger UI  
-- **/redoc →** ReDoc  
+- **/** → Health check  
+- **/docs** → Swagger UI  
+- **/redoc** → ReDoc  
 
 ## 📡 API Endpoints
 
@@ -70,15 +74,12 @@ uvicorn main:app --reload --port 8000
 | `/summarize` | POST | Generate clinical summary from free text | ✅ Ready |
 | `/extract` | POST | Extract structured clinical entities | ✅ Ready |
 | `/fhir` | POST | Convert entities into a FHIR Bundle | ✅ Ready |
+| `/pipeline` | POST | Full pipeline: summarize → extract → FHIR | ✅ Ready |
 | `/audio/upload` | POST | Upload audio for transcription | ◻️ Planned |
 
 ## 📄 Example Requests
 
-### 📝 Summarization
-
-```
-POST /summarize
-```
+### 📝 Summarization (`POST /summarize`)
 
 ```json
 {
@@ -86,11 +87,7 @@ POST /summarize
 }
 ```
 
-### 🔍 Extraction
-
-```
-POST /extract
-```
+### 🔍 Extraction (`POST /extract`)
 
 ```json
 {
@@ -101,13 +98,23 @@ POST /extract
 }
 ```
 
-### 🏥 FHIR Generation
-
-```
-POST /fhir
-```
+### 🏥 FHIR Generation (`POST /fhir`)
 
 Produces a **FHIR Bundle** containing Condition, Observation, MedicationStatement, and Procedure resources.
+
+### 🔗 Full Pipeline (`POST /pipeline`)
+
+```json
+{
+  "text": "Patient reports fatigue for 3 weeks and takes Metformin 500mg daily."
+}
+```
+
+Response includes:
+
+- `summary`
+- `entities`
+- `fhir`
 
 ## 📁 Planned Upload Flow
 
@@ -122,9 +129,9 @@ Produces a **FHIR Bundle** containing Condition, Observation, MedicationStatemen
 - Use MedCAT or scispaCy for medical NER  
 - Auto-map to SNOMED CT + ICD-10  
 - Build a React clinician UI  
-- Add `/pipeline` endpoint (text → extract → fhir in one call)  
+- Expand `/pipeline` with additional reasoning steps  
 - Add OAuth2 + JWT authentication  
-- Support export to FHIR servers (e.g., HAPI, Google FHIR, Firely)  
+- Support export to FHIR servers (HAPI, Google FHIR, Firely)  
 
 ## 📈 Development Progress
 
