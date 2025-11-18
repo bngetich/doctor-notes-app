@@ -13,7 +13,9 @@ class Medication(BaseModel):
     name: str
     dose: Optional[str] = None
     frequency: Optional[str] = None
-
+    
+class ExtractRequest(BaseModel):
+    text: str
 
 class ExtractResponse(BaseModel):
     conditions: List[str]

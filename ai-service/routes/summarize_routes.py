@@ -3,7 +3,7 @@ from models.note_models import NoteRequest, NoteResponse
 from services.summarizer_service import summarize
 
 
-router = APIRouter()
+router = APIRouter(tags=["Summarization"])
 
 @router.post(
     "/summarize", 

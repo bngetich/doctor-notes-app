@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from models.note_models import NoteRequest
-from models.extract_models import ExtractResponse
+from models.extract_models import ExtractResponse, ExtractRequest
 from services.extractor_service import extract_entities
 
 
@@ -12,7 +12,7 @@ router = APIRouter()
     response_model=ExtractResponse,
     summary="Extract structured entities"
 )
-def extract(request: NoteRequest):
+def extract(request: ExtractRequest):
     """
     Extract conditions, symptoms, medications, and procedures from raw clinical text.
     """
