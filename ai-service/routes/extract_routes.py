@@ -1,19 +1,20 @@
+# ai-service/routes/extract_routes.py
+
 from fastapi import APIRouter
-from models.note_models import NoteRequest
-from models.extract_models import ExtractResponse, ExtractRequest
+from models.extract_models import ExtractRequest, ExtractResponse
 from services.extractor_service import extract_entities
 
-
-router = APIRouter()
-
+router = APIRouter(tags=["Extraction"])
 
 @router.post(
     "/extract",
     response_model=ExtractResponse,
-    summary="Extract structured entities"
+    summary="Extract structured entities from clinical text"
 )
-def extract(request: ExtractRequest):
+def extract_route(request: ExtractRequest):
     """
-    Extract conditions, symptoms, medications, and procedures from raw clinical text.
+    Extract patient info, problems, medications, vitals, labs,
+    imaging, social/family history, assessment, and plan
+    from raw clinical text.
     """
     return extract_entities(request.text)

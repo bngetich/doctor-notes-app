@@ -3,63 +3,171 @@
 import json
 from typing import Dict, Any
 
-from config import OPENAI_MODEL_EXTRACT
-from utils.llm_client import call_llm, safe_json
+from fastapi import HTTPException
+
+from config import client, OPENAI_MODEL_EXTRACT
 
 EXTRACT_SYSTEM_PROMPT = """
 You are a clinical information extraction model.
 
-Extract the following entities from the clinical text:
+You extract structured data from doctor-patient encounter notes.
 
-- conditions: diagnoses / diseases / chronic conditions
-- symptoms: key symptoms the patient reports (include duration if mentioned)
-- medications: drugs (with dose and frequency if mentioned)
-- procedures: clinical or medical procedures performed or planned
-
-Return ONLY valid JSON in exactly this format:
+You MUST return ONLY valid JSON that matches this schema:
 
 {
-  "conditions": ["..."],
+  "patient": {
+    "name": string or null,
+    "age": integer or null,
+    "gender": string or null
+  } or null,
+
+  "conditions": [string, ...],
+
   "symptoms": [
-    { "name": "...", "duration": "..." }
+    {
+      "name": string,
+      "duration": string or null,
+      "severity": string or null
+    },
+    ...
   ],
+
   "medications": [
-    { "name": "...", "dose": "...", "frequency": "..." }
+    {
+      "name": string,
+      "dose": string or null,
+      "frequency": string or null,
+      "route": string or null
+    },
+    ...
   ],
-  "procedures": ["..."]
+
+  "procedures": [string, ...],
+
+  "allergies": [
+    {
+      "substance": string,
+      "reaction": string or null
+    },
+    ...
+  ],
+
+  "vitals": [
+    {
+      "type": string,
+      "value": string,
+      "unit": string or null
+    },
+    ...
+  ],
+
+  "labs": [
+    {
+      "test": string,
+      "value": string or null,
+      "unit": string or null,
+      "interpretation": string or null
+    },
+    ...
+  ],
+
+  "imaging": [
+    {
+      "modality": string,
+      "finding": string,
+      "impression": string or null
+    },
+    ...
+  ],
+
+  "physical_exam": [
+    {
+      "body_part": string,
+      "finding": string
+    },
+    ...
+  ],
+
+  "social_history": {
+    "smoking_status": string or null,
+    "alcohol_use": string or null,
+    "occupation": string or null
+  } or null,
+
+  "family_history": [
+    {
+      "condition": string,
+      "relation": string or null
+    },
+    ...
+  ],
+
+  "assessment": {
+    "summary": string or null
+  } or null,
+
+  "plan": {
+    "actions": [string, ...]
+  } or null
 }
 
 Rules:
-- If there are no items for a field, return an empty list [].
-- Do NOT invent information that is not clearly stated.
-- Do NOT include explanations or any extra top-level fields.
+- If a list has no items, return an empty list [].
+- If an object has no data, return null for that object.
+- Never invent medical facts that are not clearly stated in the note.
+- Do NOT include any extra top-level fields besides those listed.
+- Do NOT return any explanation. Return ONLY JSON.
 """
 
 
 def extract_entities(text: str) -> Dict[str, Any]:
     """
-    Use an LLM to extract structured clinical entities based on ExtractResponse schema.
+    Use an LLM to extract structured clinical entities
+    that match the ExtractResponse Pydantic model.
     """
 
-    messages = [
-        {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Clinical note:\n{text}\nReturn ONLY the required JSON."}
-    ]
+    user_prompt = f"""
+Clinical note:
 
-    # Safe OpenAI call with retry + backoff
-    raw = call_llm(messages, OPENAI_MODEL_EXTRACT)
+{text}
 
-    if raw is None:
-        raise ValueError("Extraction LLM failed after retries.")
+Return ONLY JSON that matches the required schema.
+"""
 
-    data = safe_json(raw)
-    if data is None:
-        raise ValueError(f"Invalid JSON returned by extraction LLM: {raw}")
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL_EXTRACT,
+        messages=[
+            {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
 
-    # Ensure all expected fields are present
+    raw = response.choices[0].message.content.strip()
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # For now fail loudly so you can see what the model returned
+        raise HTTPException(status_code=500, detail=f"Invalid JSON from extraction LLM: {raw}")
+
+    # Ensure all keys exist with safe defaults so Pydantic is happy
+    data.setdefault("patient", None)
+
     data.setdefault("conditions", [])
     data.setdefault("symptoms", [])
     data.setdefault("medications", [])
     data.setdefault("procedures", [])
+    data.setdefault("allergies", [])
+
+    data.setdefault("vitals", [])
+    data.setdefault("labs", [])
+    data.setdefault("imaging", [])
+    data.setdefault("physical_exam", [])
+
+    data.setdefault("social_history", None)
+    data.setdefault("family_history", [])
+
+    data.setdefault("assessment", None)
+    data.setdefault("plan", None)
 
     return data
