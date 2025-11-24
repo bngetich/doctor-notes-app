@@ -2,11 +2,11 @@ from typing import Dict, Any
 
 from models.pipeline_models import PipelineRequest, PipelineResponse
 from models.extract_models import ExtractResponse
-from models.fhir_models import FhirRequest, FhirResponse
+from models.fhir_models import FhirBundleResponse
 
 from services.summarizer_service import summarize
 from services.extractor_service import extract_entities
-from services.fhir_service import generate_fhir
+from services.fhir_service import generate_fhir_resource
 
 
 def run_pipeline(payload: PipelineRequest) -> PipelineResponse:
@@ -20,10 +20,10 @@ def run_pipeline(payload: PipelineRequest) -> PipelineResponse:
     entities_dict: Dict[str, Any] = extract_entities(payload.text)
     entities = ExtractResponse(**entities_dict)
     
-    fhir_request = FhirRequest(**entities.model_dump())
+    fhir_request = ExtractResponse(**entities.model_dump())
     
-    fhir_bundle_dict: Dict[str, Any] = generate_fhir(fhir_request)
-    fhir_bundle = FhirResponse(**fhir_bundle_dict)
+    fhir_bundle_dict: Dict[str, Any] = generate_fhir_resource(fhir_request)
+    fhir_bundle = FhirBundleResponse(**fhir_bundle_dict)
     
     return PipelineResponse(
         summary=summary_text,

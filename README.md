@@ -1,6 +1,6 @@
 # 🩺 LLM-Powered Clinical Note App
 
-This application converts unstructured clinical text into structured medical data using a full LLM pipeline (summarization → extraction → FHIR). It is designed to power doctor‑patient encounter documentation, EHR integration, and AI-assisted clinical workflows.
+This application converts unstructured clinical text into structured medical data using a full LLM pipeline (summarization → extraction → FHIR). It is designed to power doctor-patient encounter documentation, EHR integration, and AI-assisted clinical workflows.
 
 ## 🚀 Overview
 
@@ -100,7 +100,7 @@ uvicorn main:app --reload --port 8000
 
 ### 🏥 FHIR Generation (`POST /fhir`)
 
-Produces a **FHIR Bundle** containing Condition, Observation, MedicationStatement, and Procedure resources.
+Produces a **FHIR Bundle** containing Condition, Observation, MedicationStatement, Procedure, and AllergyIntolerance resources.
 
 ### 🔗 Full Pipeline (`POST /pipeline`)
 
@@ -147,3 +147,4 @@ Response includes:
 - [Architecture Overview](./docs/architecture.md)
 - [Development Plan](./docs/plan.md)
 - [Roadmap](./docs/roadmap.md)
+

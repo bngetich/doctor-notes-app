@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from models.extract_models import ExtractResponse
-from models.fhir_models import FhirResponse
+from models.fhir_models import FhirBundleResponse
 
 
 class PipelineRequest(BaseModel):
@@ -11,4 +11,4 @@ class PipelineRequest(BaseModel):
 class PipelineResponse(BaseModel):
     summary: Optional[str]
     entities: ExtractResponse
-    fhir: FhirResponse
+    fhir: FhirBundleResponse

@@ -1,17 +1,18 @@
 from fastapi import APIRouter
-from models.fhir_models import FhirRequest, FhirResponse
-from services.fhir_service import generate_fhir
+from models.fhir_models import FhirBundleResponse
+from models.extract_models import ExtractResponse 
+from services.fhir_service import generate_fhir_resource
 
 
-router = APIRouter()
+router = APIRouter(tags=["FHIR"])
 
 @router.post(
     "/fhir",
-    response_model=FhirResponse,
+    response_model=FhirBundleResponse,
     summary="Generate FHIR Bundle"
 )
-def generate_fhir_resource(request: FhirRequest):
+def generate_fhir_bundle(request: ExtractResponse):
     """
     Take structured clinical entities and build a FHIR Bundle.
     """
-    return generate_fhir(request)
+    return generate_fhir_resource(request)
