@@ -1,83 +1,98 @@
 # ai-service/services/fhir_service.py
 
+import uuid
 from typing import Dict, Any
-
 from models.extract_models import ExtractResponse
 
 
 def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     """
-    Build a FHIR Bundle from extracted clinical entities.
-
-    Currently includes:
-      - Patient
-      - Condition (problems, assessment text)
-      - Observation (symptoms, vitals, labs, physical exam, social history)
-      - MedicationStatement
-      - Procedure
-      - AllergyIntolerance
-      - DiagnosticReport (imaging)
-      - FamilyMemberHistory
-      - CarePlan (plan/actions)
+    Build a FHIR Bundle with UUID-based resources, linked Patient references,
+    and support for all extracted clinical entities.
     """
 
+    # -----------------------------------------
+    # Bundle container
+    # -----------------------------------------
     bundle: Dict[str, Any] = {
         "resourceType": "Bundle",
         "type": "collection",
         "entry": []
     }
 
-    # -------------------------
-    # Patient → Patient
-    # -------------------------
+    # UUID helper
+    def make_id():
+        return str(uuid.uuid4())
+
+    # -----------------------------------------
+    # Create Patient resource with UUID
+    # -----------------------------------------
+    patient_id = make_id()
+
+    patient_resource = {
+        "resourceType": "Patient",
+        "id": patient_id
+    }
+
+    # Add demographics if provided
     if entities.patient:
-        pat = {
-            "resourceType": "Patient",
-            "name": [{"text": entities.patient.name}] if entities.patient.name else None,
-            "gender": entities.patient.gender,
-        }
+        if entities.patient.name:
+            patient_resource["name"] = [{"text": entities.patient.name}]
+
+        if entities.patient.gender:
+            patient_resource["gender"] = entities.patient.gender
 
         if entities.patient.age is not None:
-            pat["extension"] = [{
-                "url": "http://hl7.org/fhir/StructureDefinition/patient-age",
-                "valueAge": {"value": entities.patient.age, "unit": "years"}
-            }]
+            # Age stored as extension
+            patient_resource["extension"] = [
+                {
+                    "url": "http://hl7.org/fhir/StructureDefinition/patient-age",
+                    "valueAge": {
+                        "value": entities.patient.age,
+                        "unit": "years"
+                    }
+                }
+            ]
 
-        # Remove None fields
-        pat = {k: v for k, v in pat.items() if v is not None}
+    # Add the Patient entry
+    bundle["entry"].append({"resource": patient_resource})
 
-        bundle["entry"].append({"resource": pat})
+    # Convenience reference string
+    patient_ref = f"Patient/{patient_id}"
 
-    # -------------------------
-    # Conditions → Condition
-    # -------------------------
+
+    # ============================================================
+    # 1. CONDITIONS
+    # ============================================================
     for condition in entities.conditions:
-        condition_resource = {
+        resource = {
             "resourceType": "Condition",
-            "code": {
-                "text": condition
-            }
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
+            "code": {"text": condition},
         }
-        bundle["entry"].append({"resource": condition_resource})
+        bundle["entry"].append({"resource": resource})
 
-    # Assessment summary → Condition (problem/assessment)
+    # Assessment → treat as Condition
     if entities.assessment and entities.assessment.summary:
-        bundle["entry"].append({
-            "resource": {
-                "resourceType": "Condition",
-                "code": {"text": entities.assessment.summary}
-            }
-        })
+        resource = {
+            "resourceType": "Condition",
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
+            "code": {"text": entities.assessment.summary},
+        }
+        bundle["entry"].append({"resource": resource})
 
-    # -------------------------
-    # Symptoms → Observation
-    # -------------------------
+
+    # ============================================================
+    # 2. SYMPTOMS → Observations
+    # ============================================================
     for symptom in entities.symptoms:
-        observation_resource = {
+        obs = {
             "resourceType": "Observation",
-            "code": {
-                "text": symptom.name
-            },
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
+            "code": {"text": symptom.name},
             "valueString": symptom.name,
         }
 
@@ -87,83 +102,77 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         if symptom.severity:
             notes.append({"text": f"Severity: {symptom.severity}"})
         if notes:
-            observation_resource["note"] = notes
+            obs["note"] = notes
 
-        bundle["entry"].append({"resource": observation_resource})
+        bundle["entry"].append({"resource": obs})
 
-    # -------------------------
-    # Vitals → Observation
-    # -------------------------
+
+    # ============================================================
+    # 3. VITALS → Observations
+    # ============================================================
     for vit in entities.vitals:
-        # Example: { "type": "heart rate", "value": "88", "unit": "bpm" }
-
-        vital_obs: Dict[str, Any] = {
+        obs = {
             "resourceType": "Observation",
-            "code": {
-                "text": vit.type
-            },
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
+            "code": {"text": vit.type},
             "valueQuantity": {}
         }
 
-        # value (numeric or string)
         if vit.value is not None:
             try:
-                vital_obs["valueQuantity"]["value"] = float(vit.value)
-            except (TypeError, ValueError):
-                vital_obs["valueQuantity"]["value"] = vit.value
+                obs["valueQuantity"]["value"] = float(vit.value)
+            except:
+                obs["valueQuantity"]["value"] = vit.value
 
-        # unit
         if vit.unit:
-            vital_obs["valueQuantity"]["unit"] = vit.unit
+            obs["valueQuantity"]["unit"] = vit.unit
 
-        # drop valueQuantity if empty
-        if not vital_obs["valueQuantity"]:
-            del vital_obs["valueQuantity"]
+        if not obs["valueQuantity"]:
+            del obs["valueQuantity"]
 
-        bundle["entry"].append({"resource": vital_obs})
+        bundle["entry"].append({"resource": obs})
 
-    # -------------------------
-    # Labs → Observation
-    # -------------------------
+
+    # ============================================================
+    # 4. LABS → Observations
+    # ============================================================
     for lab in entities.labs:
-        # Example: { "test": "HbA1c", "value": "7.4", "unit": "%", "interpretation": "high" }
-
-        lab_obs: Dict[str, Any] = {
+        obs = {
             "resourceType": "Observation",
-            "code": {
-                "text": lab.test
-            },
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
+            "code": {"text": lab.test},
             "valueQuantity": {}
         }
 
-        if lab.value is not None:
+        if lab.value:
             try:
-                lab_obs["valueQuantity"]["value"] = float(lab.value)
-            except (TypeError, ValueError):
-                lab_obs["valueQuantity"]["value"] = lab.value
+                obs["valueQuantity"]["value"] = float(lab.value)
+            except:
+                obs["valueQuantity"]["value"] = lab.value
 
         if lab.unit:
-            lab_obs["valueQuantity"]["unit"] = lab.unit
+            obs["valueQuantity"]["unit"] = lab.unit
 
         if lab.interpretation:
-            lab_obs["interpretation"] = [
-                {"text": lab.interpretation}
-            ]
+            obs["interpretation"] = [{"text": lab.interpretation}]
 
-        if not lab_obs["valueQuantity"]:
-            del lab_obs["valueQuantity"]
+        if not obs["valueQuantity"]:
+            del obs["valueQuantity"]
 
-        bundle["entry"].append({"resource": lab_obs})
+        bundle["entry"].append({"resource": obs})
 
-    # -------------------------
-    # Medications → MedicationStatement
-    # -------------------------
+
+    # ============================================================
+    # 5. MEDICATIONS → MedicationStatement
+    # ============================================================
     for med in entities.medications:
-        med_resource: Dict[str, Any] = {
+        med_res = {
             "resourceType": "MedicationStatement",
-            "medicationCodeableConcept": {
-                "text": med.name
-            }
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
+            "medicationCodeableConcept": {"text": med.name}
         }
 
         dosage_parts = []
@@ -175,91 +184,91 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             dosage_parts.append(med.route)
 
         if dosage_parts:
-            med_resource["dosage"] = [
-                {"text": " ".join(dosage_parts)}
-            ]
+            med_res["dosage"] = [{"text": " ".join(dosage_parts)}]
 
-        bundle["entry"].append({"resource": med_resource})
+        bundle["entry"].append({"resource": med_res})
 
-    # -------------------------
-    # Procedures → Procedure
-    # -------------------------
+
+    # ============================================================
+    # 6. PROCEDURES
+    # ============================================================
     for proc in entities.procedures:
-        proc_resource = {
+        proc_res = {
             "resourceType": "Procedure",
-            "code": {
-                "text": proc
-            }
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
+            "code": {"text": proc},
         }
-        bundle["entry"].append({"resource": proc_resource})
+        bundle["entry"].append({"resource": proc_res})
 
-    # -------------------------
-    # Allergies → AllergyIntolerance
-    # -------------------------
+
+    # ============================================================
+    # 7. ALLERGIES → AllergyIntolerance
+    # ============================================================
     for allergy in entities.allergies:
-        allergy_resource: Dict[str, Any] = {
+        al_res = {
             "resourceType": "AllergyIntolerance",
-            "code": {
-                "text": allergy.substance
-            }
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
+            "code": {"text": allergy.substance},
         }
 
         if allergy.reaction:
-            allergy_resource["reaction"] = [
-                {
-                    "description": allergy.reaction,
-                    "manifestation": [{"text": allergy.reaction}]
-                }
-            ]
+            al_res["reaction"] = [{
+                "description": allergy.reaction,
+                "manifestation": [{"text": allergy.reaction}]
+            }]
 
-        bundle["entry"].append({"resource": allergy_resource})
+        bundle["entry"].append({"resource": al_res})
 
-    # -------------------------
-    # Imaging → DiagnosticReport
-    # -------------------------
+
+    # ============================================================
+    # 8. IMAGING → DiagnosticReport
+    # ============================================================
     for img in entities.imaging:
-        # Example: { "modality": "X-ray", "finding": "No fracture", "impression": "Normal study" }
-
-        diag: Dict[str, Any] = {
+        diag = {
             "resourceType": "DiagnosticReport",
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
             "status": "final",
             "code": {"text": img.modality},
             "conclusion": img.impression or img.finding,
         }
 
-        # Attach finding as a simple presentedForm text blob
         if img.finding:
-            diag["presentedForm"] = [
-                {
-                    "contentType": "text/plain",
-                    "data": img.finding
-                }
-            ]
+            diag["presentedForm"] = [{
+                "contentType": "text/plain",
+                "data": img.finding
+            }]
 
         bundle["entry"].append({"resource": diag})
 
-    # -------------------------
-    # Physical exam → Observation
-    # -------------------------
+
+    # ============================================================
+    # 9. PHYSICAL EXAM → Observations
+    # ============================================================
     for exam in entities.physical_exam:
         exam_obs = {
             "resourceType": "Observation",
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
             "code": {"text": f"Physical exam of {exam.body_part}"},
             "valueString": exam.finding
         }
 
         bundle["entry"].append({"resource": exam_obs})
 
-    # -------------------------
-    # Family history → FamilyMemberHistory
-    # -------------------------
+
+    # ============================================================
+    # 10. FAMILY HISTORY
+    # ============================================================
     for fh in entities.family_history:
-        fam: Dict[str, Any] = {
+        fam = {
             "resourceType": "FamilyMemberHistory",
+            "id": make_id(),
             "status": "completed",
-            "condition": [
-                {"code": {"text": fh.condition}}
-            ]
+            "patient": {"reference": patient_ref},
+            "condition": [{"code": {"text": fh.condition}}],
         }
 
         if fh.relation:
@@ -267,9 +276,10 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
 
         bundle["entry"].append({"resource": fam})
 
-    # -------------------------
-    # Social history → Observation (social-history category)
-    # -------------------------
+
+    # ============================================================
+    # 11. SOCIAL HISTORY → Observations
+    # ============================================================
     if entities.social_history:
         sh = entities.social_history
 
@@ -277,9 +287,11 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             bundle["entry"].append({
                 "resource": {
                     "resourceType": "Observation",
+                    "id": make_id(),
+                    "subject": {"reference": patient_ref},
                     "category": [{"text": "social-history"}],
                     "code": {"text": "smoking status"},
-                    "valueString": sh.smoking_status
+                    "valueString": sh.smoking_status,
                 }
             })
 
@@ -287,9 +299,11 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             bundle["entry"].append({
                 "resource": {
                     "resourceType": "Observation",
+                    "id": make_id(),
+                    "subject": {"reference": patient_ref},
                     "category": [{"text": "social-history"}],
                     "code": {"text": "alcohol use"},
-                    "valueString": sh.alcohol_use
+                    "valueString": sh.alcohol_use,
                 }
             })
 
@@ -297,18 +311,23 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             bundle["entry"].append({
                 "resource": {
                     "resourceType": "Observation",
+                    "id": make_id(),
+                    "subject": {"reference": patient_ref},
                     "category": [{"text": "social-history"}],
                     "code": {"text": "occupation"},
-                    "valueString": sh.occupation
+                    "valueString": sh.occupation,
                 }
             })
 
-    # -------------------------
-    # Plan → CarePlan
-    # -------------------------
+
+    # ============================================================
+    # 12. PLAN → CarePlan
+    # ============================================================
     if entities.plan and entities.plan.actions:
         care_plan = {
             "resourceType": "CarePlan",
+            "id": make_id(),
+            "subject": {"reference": patient_ref},
             "status": "active",
             "intent": "plan",
             "activity": [
@@ -316,6 +335,8 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
                 for action in entities.plan.actions
             ]
         }
+
         bundle["entry"].append({"resource": care_plan})
+
 
     return bundle

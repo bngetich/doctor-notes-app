@@ -37,3 +37,13 @@ def test_generate_full_fhir_bundle():
     assert "DiagnosticReport" in resource_types
     assert "FamilyMemberHistory" in resource_types
     assert "CarePlan" in resource_types
+
+    # Check Patient has an id
+    patient_resource = next(
+        entry["resource"] for entry in bundle["entry"]
+        if entry["resource"]["resourceType"] == "Patient"
+    )
+
+    assert "id" in patient_resource
+    assert isinstance(patient_resource["id"], str)
+    assert len(patient_resource["id"]) > 0
