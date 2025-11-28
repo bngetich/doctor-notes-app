@@ -1,40 +1,23 @@
 # 🏗️ System Architecture
 
-This document describes the architecture of the **LLM-Powered Clinical Note App**, including backend structure, pipeline design, and how LLMs integrate into the system.
+This document describes how all components in the Doctor Notes App work together.
 
 ---
 
-## 🧩 High-Level System Components
+# ⚙️ High-Level Architecture
 
-### **1. Frontend (React – planned)**
-- Clinician enters text or uploads audio
-- Displays summary, structured entities, and FHIR output
+The backend is composed of four cooperating subsystems:
 
-### **2. Backend (FastAPI + Python)**
-- `/summarize` — LLM summarization  
-- `/extract` — LLM entity extraction  
-- `/fhir` — FHIR bundle generation  
-- `/pipeline` — summarize → extract → fhir in one call
+1. **Summarizer Service** → rewrites raw text into EMR-style summary  
+2. **Extractor Service** → extracts structured entities  
+3. **Normalization Service** → cleans & standardizes extracted data  
+4. **FHIR Service** → generates a FHIR Bundle  
 
-### **3. External LLM Provider**
-- Currently OpenAI API
-- Can later support:
-  - NVIDIA NIM
-  - vLLM
-  - Ollama
-  - Local models
+These are orchestrated by `pipeline_service.py`.
 
 ---
 
-## 🧬 Pipeline Architecture Overview
-
-```
-text → summarize → extract → fhir → output
-```
-
----
-
-## 🚦 Pipeline Sequence Diagram
+# 🚦 Pipeline Sequence Diagram
 
 ```mermaid
 sequenceDiagram
@@ -42,6 +25,7 @@ sequenceDiagram
     participant Backend as FastAPI Backend
     participant Sum as Summarizer Service
     participant Ext as Extractor Service
+    participant Norm as Normalization Service
     participant FHIR as FHIR Service
     participant LLM as OpenAI / Local LLM
 
@@ -52,34 +36,39 @@ sequenceDiagram
     Sum-->>Backend: summary
 
     Backend->>Ext: extract(text)
-    Ext->>LLM: Extraction Prompt with JSON schema
+    Ext->>LLM: Extraction Prompt (JSON schema)
     LLM-->>Ext: { entities }
     Ext-->>Backend: ExtractResponse
 
-    Backend->>FHIR: generate_fhir_bundle(entities)
+    Backend->>Norm: normalize_entities(raw_entities)
+    Norm-->>Backend: Cleaned entities
+
+    Backend->>FHIR: generate_fhir_bundle(normalized_entities)
     FHIR-->>Backend: FHIR Bundle
 
-    Backend-->>User: { summary, entities, fhir }
+    Backend-->>User: { summary, entities, normalized, fhir }
 ```
 
 ---
 
-## 🧱 Backend Layered Architecture
+# 🧱 Backend Layered Architecture
 
 ```mermaid
 graph TD
     subgraph Routes
         R1[summarize_routes.py]
         R2[extract_routes.py]
-        R3[fhir_routes.py]
-        R4[pipeline_routes.py]
+        R3[normalize_routes.py]
+        R4[fhir_routes.py]
+        R5[pipeline_routes.py]
     end
 
     subgraph Services
         S1[summarizer_service.py]
         S2[extractor_service.py]
-        S3[fhir_service.py]
-        S4[pipeline_service.py]
+        S3[normalization_service.py]
+        S4[fhir_service.py]
+        S5[pipeline_service.py]
     end
 
     subgraph Models
@@ -93,41 +82,46 @@ graph TD
     R2 --> S2
     R3 --> S3
     R4 --> S4
+    R5 --> S5
 
     S1 --> M1
     S2 --> M2
     S3 --> M2
-    S4 --> M1
     S4 --> M2
-    S4 --> M3
+    S5 --> M1
+    S5 --> M2
+    S5 --> M3
 ```
 
 ---
 
-## 🧠 Key Architecture Decisions
+# 🧩 Component Responsibilities
 
-### ✔ **Unified Clinical Schema — ExtractResponse**
-One schema powers extraction → fhir.  
-No duplication, no drift, simple pipeline.
+### **Summarizer**
+- Converts text → EMR-style summary  
+- Extracts basic diagnoses, symptoms, medications  
 
-### ✔ **Services return plain dicts**
-FastAPI handles validation through `response_model`.
+### **Extractor**
+- Runs strict JSON schema extraction  
+- Produces deeply structured clinical entities  
 
-### ✔ **Interchangeable LLM backend**
-Only `summarizer_service` and `extractor_service` depend on the LLM provider.
+### **Normalization**
+- Removes noise  
+- Ensures entity shape matches Pydantic models  
+- Prepares data for FHIR stability  
 
-### ✔ **Agent-ready Pipeline**
-The `/pipeline` endpoint can later include:
-- validation
-- error correction
-- tool usage
-- medical reasoning
+### **FHIR Generator**
+- Creates real, structured, interoperable FHIR resources  
+- Outputs full Bundle  
 
 ---
 
-## 📌 Future Architectural Enhancements
-- Add audio → text service
-- Add vector DB for guidelines lookup
-- Add terminology server integration (Snowstorm)
-- Add agentic orchestration layer
+# 📍 Design Principles
 
+- **LLM variability → normalization → stable FHIR output**
+- Keep services modular & testable
+- Allow local or cloud LLMs
+
+---
+
+# ✔️ End of architecture.md
