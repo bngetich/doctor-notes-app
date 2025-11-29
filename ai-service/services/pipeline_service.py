@@ -6,50 +6,50 @@ from services.summarizer_service import summarize
 from services.extractor_service import extract_entities
 from services.normalization_service import normalize_entities
 from services.fhir_service import generate_fhir_resource
+from models.extract_models import ExtractResponse
 
 
 def run_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Full clinical text → summary → extraction → normalization → FHIR pipeline.
 
-    This is the orchestrator that performs the entire workflow:
-
-        1. Summarize unstructured text using the LLM
-        2. Extract structured entities using the LLM
-        3. Normalize/clean the extracted entities (fix formatting)
-        4. Generate a full FHIR Bundle from the normalized data
-
-    Returns a combined dict with all outputs.
+        1. Summarize text
+        2. Extract raw entities using LLM
+        3. Normalize entities
+        4. Convert normalized entities into ExtractResponse (Pydantic)
+        5. Generate FHIR Bundle
     """
 
     text = payload["text"]
 
-    # -----------------------------
-    #   1. Summarization (LLM)
-    # -----------------------------
+    # --------------------------------
+    # 1. Summarization
+    # --------------------------------
     summary_data = summarize(text)
-    # summary_data = { "summary": "...", "diagnoses": [...], "symptoms": [...], ... }
 
-    # -----------------------------
-    #   2. Extraction (LLM)
-    # -----------------------------
+    # --------------------------------
+    # 2. Extraction
+    # --------------------------------
     raw_entities = extract_entities(text)
-    # raw_entities = messy JSON from LLM
 
-    # -----------------------------
-    #   3. Normalization (IMPORTANT)
-    # -----------------------------
+    # --------------------------------
+    # 3. Normalization
+    # --------------------------------
     clean_entities = normalize_entities(raw_entities)
-    # clean_entities = stable, safe, normalized structure
 
-    # -----------------------------
-    #   4. FHIR Bundle
-    # -----------------------------
-    fhir_bundle = generate_fhir_resource(clean_entities)
+    # --------------------------------
+    # 4. Convert dict → ExtractResponse model
+    # --------------------------------
+    entities_model = ExtractResponse(**clean_entities)
 
-    # -----------------------------
-    #   Final output to requestor
-    # -----------------------------
+    # --------------------------------
+    # 5. Generate FHIR Bundle
+    # --------------------------------
+    fhir_bundle = generate_fhir_resource(entities_model)
+
+    # --------------------------------
+    # Final output
+    # --------------------------------
     return {
         "summary": summary_data["summary"],
         "entities": clean_entities,

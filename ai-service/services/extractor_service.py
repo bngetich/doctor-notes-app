@@ -5,7 +5,8 @@ from typing import Dict, Any
 
 from fastapi import HTTPException
 
-from config import client, OPENAI_MODEL_EXTRACT
+from utils.llm_client import call_llm, safe_json
+from config import OPENAI_MODEL_EXTRACT
 
 EXTRACT_SYSTEM_PROMPT = """
 You are a clinical information extraction model.
@@ -120,12 +121,11 @@ Rules:
 """
 
 
-def extract_entities(text: str) -> Dict[str, Any]:
+def _call_extraction_llm(text: str) -> str:
     """
-    Use an LLM to extract structured clinical entities
-    that match the ExtractResponse Pydantic model.
+    Single extraction request.
+    Uses call_llm() which includes tenacity retries.
     """
-
     user_prompt = f"""
 Clinical note:
 
@@ -134,40 +134,104 @@ Clinical note:
 Return ONLY JSON that matches the required schema.
 """
 
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL_EXTRACT,
+    raw = call_llm(
         messages=[
             {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
+        model=OPENAI_MODEL_EXTRACT,
     )
 
-    raw = response.choices[0].message.content.strip()
+    if raw is None:
+        # All tenacity retries failed
+        raise HTTPException(
+            status_code=500, detail="Extraction LLM failed after retries."
+        )
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        # For now fail loudly so you can see what the model returned
-        raise HTTPException(status_code=500, detail=f"Invalid JSON from extraction LLM: {raw}")
+    return raw.strip()
 
-    # Ensure all keys exist with safe defaults so Pydantic is happy
-    data.setdefault("patient", None)
 
-    data.setdefault("conditions", [])
-    data.setdefault("symptoms", [])
-    data.setdefault("medications", [])
-    data.setdefault("procedures", [])
-    data.setdefault("allergies", [])
+def _call_repair_llm(bad_output: str) -> str:
+    """
+    Use LLM to fix invalid JSON.
+    Also uses call_llm() for retry/backoff.
+    """
 
-    data.setdefault("vitals", [])
-    data.setdefault("labs", [])
-    data.setdefault("imaging", [])
-    data.setdefault("physical_exam", [])
+    repair_prompt = f"""
+The following content is invalid JSON:
 
-    data.setdefault("social_history", None)
-    data.setdefault("family_history", [])
+{bad_output}
 
-    data.setdefault("assessment", None)
-    data.setdefault("plan", None)
+Fix it so it becomes valid JSON matching the required extraction schema.
+Return ONLY the corrected JSON.
+"""
 
-    return data
+    raw = call_llm(
+        messages=[
+            {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
+            {"role": "user", "content": repair_prompt},
+        ],
+        model=OPENAI_MODEL_EXTRACT,
+    )
+
+    if raw is None:
+        raise HTTPException(status_code=500, detail="Repair LLM failed after retries.")
+
+    return raw.strip()
+
+
+def extract_entities(text: str) -> Dict[str, Any]:
+    """
+    Robust extraction with:
+    - Tenacity API retry layer (via call_llm)
+    - LLM JSON repair layer if initial attempt fails
+    """
+
+    last_raw = None
+    parsed_data = None
+
+    # Two-attempt strategy:
+    # 1. Normal extraction
+    # 2. Repair JSON
+    for attempt in range(2):
+
+        if attempt == 0:
+            raw = _call_extraction_llm(text)
+        else:
+            raw = _call_repair_llm(last_raw or "")
+
+        last_raw = raw
+
+        loaded = safe_json(raw)
+        if isinstance(loaded, dict):
+            parsed_data = loaded
+            break
+
+    if parsed_data is None:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid JSON from extraction LLM after repair attempts: {last_raw}",
+        )
+
+    # Safety defaults for missing fields
+    defaults = {
+        "patient": None,
+        "conditions": [],
+        "symptoms": [],
+        "medications": [],
+        "procedures": [],
+        "allergies": [],
+        "vitals": [],
+        "labs": [],
+        "imaging": [],
+        "physical_exam": [],
+        "social_history": None,
+        "family_history": [],
+        "assessment": None,
+        "plan": None,
+    }
+
+    for key, default in defaults.items():
+        parsed_data.setdefault(key, default)
+
+    return parsed_data
