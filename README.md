@@ -149,6 +149,6 @@ Output includes:
 
 ## 📚 Documentation
 
-- [Architecture Overview](./architecture.md)
-- [Development Plan](./plan.md)
-- [Roadmap](./roadmap.md)
+- [Architecture Overview](./docs/architecture.md)
+- [Development Plan](./docs/plan.md)
+- [Roadmap](./docs/roadmap.md)

@@ -2,13 +2,25 @@
 
 import uuid
 from typing import Dict, Any
+
 from models.extract_models import ExtractResponse
+from services.knowledge_service import (
+    lookup_snomed,
+    lookup_icd10,
+    lookup_rxnorm,
+    lookup_loinc,
+)
 
 
 def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     """
     Build a FHIR Bundle with UUID-based resources, linked Patient references,
     and support for all extracted clinical entities.
+
+    Now includes:
+      - SNOMED + ICD-10 coding for conditions (when available)
+      - RxNorm coding for medications
+      - LOINC coding for lab tests
     """
 
     # -----------------------------------------
@@ -21,7 +33,7 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     }
 
     # UUID helper
-    def make_id():
+    def make_id() -> str:
         return str(uuid.uuid4())
 
     # -----------------------------------------
@@ -29,7 +41,7 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     # -----------------------------------------
     patient_id = make_id()
 
-    patient_resource = {
+    patient_resource: Dict[str, Any] = {
         "resourceType": "Patient",
         "id": patient_id
     }
@@ -60,35 +72,57 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     # Convenience reference string
     patient_ref = f"Patient/{patient_id}"
 
-
     # ============================================================
-    # 1. CONDITIONS
+    # 1. CONDITIONS  (SNOMED + ICD-10 when possible)
     # ============================================================
     for condition in entities.conditions:
+        # Try SNOMED first, then ICD-10 as fallback
+        coding = lookup_snomed(condition) or lookup_icd10(condition)
+
         resource = {
             "resourceType": "Condition",
             "id": make_id(),
             "subject": {"reference": patient_ref},
-            "code": {"text": condition},
+            "code": {
+                "text": condition
+            }
         }
+        # If we found a coding, add it under code.coding
+        if coding:
+            resource["code"]["coding"] = [coding]
+
         bundle["entry"].append({"resource": resource})
 
-    # Assessment → treat as Condition
+    # Assessment summary → treat as Condition (problem/assessment)
     if entities.assessment and entities.assessment.summary:
+        summary_text = entities.assessment.summary
+        code_obj: Dict[str, Any] = {"text": summary_text}
+        coding_array = []
+
+        snomed = lookup_snomed(summary_text)
+        if snomed:
+            coding_array.append(snomed)
+
+        icd10 = lookup_icd10(summary_text)
+        if icd10:
+            coding_array.append(icd10)
+
+        if coding_array:
+            code_obj["coding"] = coding_array
+
         resource = {
             "resourceType": "Condition",
             "id": make_id(),
             "subject": {"reference": patient_ref},
-            "code": {"text": entities.assessment.summary},
+            "code": code_obj,
         }
         bundle["entry"].append({"resource": resource})
-
 
     # ============================================================
     # 2. SYMPTOMS → Observations
     # ============================================================
     for symptom in entities.symptoms:
-        obs = {
+        obs: Dict[str, Any] = {
             "resourceType": "Observation",
             "id": make_id(),
             "subject": {"reference": patient_ref},
@@ -106,12 +140,11 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
 
         bundle["entry"].append({"resource": obs})
 
-
     # ============================================================
     # 3. VITALS → Observations
     # ============================================================
     for vit in entities.vitals:
-        obs = {
+        obs: Dict[str, Any] = {
             "resourceType": "Observation",
             "id": make_id(),
             "subject": {"reference": patient_ref},
@@ -122,7 +155,7 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         if vit.value is not None:
             try:
                 obs["valueQuantity"]["value"] = float(vit.value)
-            except:
+            except Exception:
                 obs["valueQuantity"]["value"] = vit.value
 
         if vit.unit:
@@ -133,23 +166,30 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
 
         bundle["entry"].append({"resource": obs})
 
-
     # ============================================================
-    # 4. LABS → Observations
+    # 4. LABS → Observations (LOINC when possible)
     # ============================================================
     for lab in entities.labs:
-        obs = {
+        # Try to map to LOINC
+        coding = lookup_loinc(lab.test)
+
+        obs: Dict[str, Any] = {
             "resourceType": "Observation",
             "id": make_id(),
             "subject": {"reference": patient_ref},
-            "code": {"text": lab.test},
+            "code": {
+                "text": lab.test
+            },
             "valueQuantity": {}
         }
 
-        if lab.value:
+        if coding:
+            obs["code"]["coding"] = [coding]
+
+        if lab.value is not None:
             try:
                 obs["valueQuantity"]["value"] = float(lab.value)
-            except:
+            except Exception:
                 obs["valueQuantity"]["value"] = lab.value
 
         if lab.unit:
@@ -163,17 +203,20 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
 
         bundle["entry"].append({"resource": obs})
 
-
     # ============================================================
-    # 5. MEDICATIONS → MedicationStatement
+    # 5. MEDICATIONS → MedicationStatement (RxNorm when possible)
     # ============================================================
     for med in entities.medications:
-        med_res = {
+        coding = lookup_rxnorm(med.name)
+        med_res: Dict[str, Any] = {
             "resourceType": "MedicationStatement",
             "id": make_id(),
             "subject": {"reference": patient_ref},
-            "medicationCodeableConcept": {"text": med.name}
+            "medicationCodeableConcept": {"text": med.name},
         }
+
+        if coding:
+            med_res["medicationCodeableConcept"]["coding"] = [coding]
 
         dosage_parts = []
         if med.dose:
@@ -188,7 +231,6 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
 
         bundle["entry"].append({"resource": med_res})
 
-
     # ============================================================
     # 6. PROCEDURES
     # ============================================================
@@ -201,12 +243,11 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         }
         bundle["entry"].append({"resource": proc_res})
 
-
     # ============================================================
     # 7. ALLERGIES → AllergyIntolerance
     # ============================================================
     for allergy in entities.allergies:
-        al_res = {
+        al_res: Dict[str, Any] = {
             "resourceType": "AllergyIntolerance",
             "id": make_id(),
             "subject": {"reference": patient_ref},
@@ -221,12 +262,11 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
 
         bundle["entry"].append({"resource": al_res})
 
-
     # ============================================================
     # 8. IMAGING → DiagnosticReport
     # ============================================================
     for img in entities.imaging:
-        diag = {
+        diag: Dict[str, Any] = {
             "resourceType": "DiagnosticReport",
             "id": make_id(),
             "subject": {"reference": patient_ref},
@@ -243,7 +283,6 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
 
         bundle["entry"].append({"resource": diag})
 
-
     # ============================================================
     # 9. PHYSICAL EXAM → Observations
     # ============================================================
@@ -257,7 +296,6 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         }
 
         bundle["entry"].append({"resource": exam_obs})
-
 
     # ============================================================
     # 10. FAMILY HISTORY
@@ -275,7 +313,6 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             fam["relationship"] = {"text": fh.relation}
 
         bundle["entry"].append({"resource": fam})
-
 
     # ============================================================
     # 11. SOCIAL HISTORY → Observations
@@ -319,7 +356,6 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
                 }
             })
 
-
     # ============================================================
     # 12. PLAN → CarePlan
     # ============================================================
@@ -337,6 +373,5 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         }
 
         bundle["entry"].append({"resource": care_plan})
-
 
     return bundle

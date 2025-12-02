@@ -7,9 +7,11 @@ from services.extractor_service import extract_entities
 from services.normalization_service import normalize_entities
 from services.fhir_service import generate_fhir_resource
 from models.extract_models import ExtractResponse
+from models.pipeline_models import PipelineRequest, PipelineResponse
+from models.fhir_models import FhirBundleResponse
 
 
-def run_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
+def run_pipeline(payload: PipelineRequest) -> PipelineResponse:
     """
     Full clinical text → summary → extraction → normalization → FHIR pipeline.
 
@@ -20,7 +22,7 @@ def run_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
         5. Generate FHIR Bundle
     """
 
-    text = payload["text"]
+    text = payload.text
 
     # --------------------------------
     # 1. Summarization
@@ -50,8 +52,10 @@ def run_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
     # --------------------------------
     # Final output
     # --------------------------------
-    return {
-        "summary": summary_data["summary"],
-        "entities": clean_entities,
-        "fhir": fhir_bundle,
-    }
+    fhir_response = FhirBundleResponse(**fhir_bundle)
+    
+    return PipelineResponse(
+        summary=summary_data["summary"],
+        entities=entities_model,
+        fhir=fhir_response,
+    )
