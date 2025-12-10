@@ -1,7 +1,7 @@
 # ai-service/services/fhir_service.py
 
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from models.extract_models import ExtractResponse
 from services.knowledge_service import (
@@ -10,17 +10,132 @@ from services.knowledge_service import (
     lookup_rxnorm,
     lookup_loinc,
 )
+from rag.rag_search import rag_lookup
+
+
+def make_id() -> str:
+    """
+    Helper to generate a random UUID string for FHIR resource IDs.
+    """
+    return str(uuid.uuid4())
+
+
+def validate_condition_coding(term: str, coding: Dict[str, str]) -> Optional[Dict[str, str]]:
+    """
+    Validate a RAG-returned coding against local CSV vocabulary.
+
+    We treat the CSV-backed lookup (lookup_snomed / lookup_icd10)
+    as the source of truth.
+
+    Rules:
+      - Try to find the same concept via local lookup (by display or term)
+      - If the codes match, accept the RAG coding
+      - Otherwise, reject it (return None)
+    """
+    display = coding.get("display") or term
+
+    # Try SNOMED
+    csv_snomed = lookup_snomed(display)
+    if csv_snomed and csv_snomed.get("code") == coding.get("code"):
+        return coding
+
+    # Try ICD-10
+    csv_icd = lookup_icd10(display)
+    if csv_icd and csv_icd.get("code") == coding.get("code"):
+        return coding
+
+    return None
+
+
+def build_condition_code(term: str) -> Dict[str, Any]:
+    """
+    Build the FHIR 'code' object for a Condition, using:
+
+      1. RAG semantic search (rag_lookup) for SNOMED/ICD candidates
+      2. Validation against CSV vocabulary (validate_condition_coding)
+      3. Fallback to direct lookup_snomed / lookup_icd10
+
+    Returns a dict like:
+      {
+        "text": "type 2 diabetes",
+        "coding": [
+          {...SNOMED...},
+          {...ICD-10...}
+        ]
+      }
+    """
+    code_obj: Dict[str, Any] = {"text": term}
+    coding_list: List[Dict[str, str]] = []
+
+    # ------- 1. Try RAG semantic search -------
+    rag_results = rag_lookup(term) or []  # assumed: list of {system, code, display}
+
+    if rag_results:
+        best_candidate = rag_results[0]
+        validated = validate_condition_coding(term, best_candidate)
+        if validated:
+            coding_list.append(validated)
+
+    # ------- 2. Fallback to SNOMED / ICD-10 lookups -------
+    if not coding_list:
+        snomed = lookup_snomed(term)
+        if snomed:
+            coding_list.append(snomed)
+
+    # ICD-10 can be added alongside SNOMED
+    icd10 = lookup_icd10(term)
+    if icd10:
+        coding_list.append(icd10)
+
+    if coding_list:
+        code_obj["coding"] = coding_list
+
+    return code_obj
+
+
+def build_lab_code(test_name: str) -> Dict[str, Any]:
+    """
+    Build code object for lab Observations using LOINC when possible.
+    """
+    code_obj: Dict[str, Any] = {"text": test_name}
+
+    loinc = lookup_loinc(test_name)
+    if loinc:
+        code_obj["coding"] = [loinc]
+
+    return code_obj
+
+
+def build_medication_code(med_name: str) -> Dict[str, Any]:
+    """
+    Build medicationCodeableConcept using RxNorm where available.
+    """
+    med_code: Dict[str, Any] = {"text": med_name}
+
+    rx = lookup_rxnorm(med_name)
+    if rx:
+        med_code["coding"] = [rx]
+
+    return med_code
 
 
 def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     """
     Build a FHIR Bundle with UUID-based resources, linked Patient references,
-    and support for all extracted clinical entities.
+    and terminology coding supported by both:
+      - semantic RAG search (for conditions)
+      - local CSV-backed lookup (SNOMED, ICD-10, LOINC, RxNorm)
 
-    Now includes:
-      - SNOMED + ICD-10 coding for conditions (when available)
-      - RxNorm coding for medications
-      - LOINC coding for lab tests
+    Includes:
+      - Patient
+      - Condition (problems + assessment)
+      - Observation (symptoms, vitals, labs, physical exam, social history)
+      - MedicationStatement
+      - Procedure
+      - AllergyIntolerance
+      - DiagnosticReport
+      - FamilyMemberHistory
+      - CarePlan
     """
 
     # -----------------------------------------
@@ -29,94 +144,60 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     bundle: Dict[str, Any] = {
         "resourceType": "Bundle",
         "type": "collection",
-        "entry": []
+        "entry": [],
     }
 
-    # UUID helper
-    def make_id() -> str:
-        return str(uuid.uuid4())
-
     # -----------------------------------------
-    # Create Patient resource with UUID
+    # Create Patient resource
     # -----------------------------------------
     patient_id = make_id()
+    patient_ref = f"Patient/{patient_id}"
 
     patient_resource: Dict[str, Any] = {
         "resourceType": "Patient",
-        "id": patient_id
+        "id": patient_id,
     }
 
-    # Add demographics if provided
     if entities.patient:
         if entities.patient.name:
             patient_resource["name"] = [{"text": entities.patient.name}]
-
         if entities.patient.gender:
             patient_resource["gender"] = entities.patient.gender
-
         if entities.patient.age is not None:
-            # Age stored as extension
             patient_resource["extension"] = [
                 {
                     "url": "http://hl7.org/fhir/StructureDefinition/patient-age",
                     "valueAge": {
                         "value": entities.patient.age,
-                        "unit": "years"
-                    }
+                        "unit": "years",
+                    },
                 }
             ]
 
-    # Add the Patient entry
     bundle["entry"].append({"resource": patient_resource})
 
-    # Convenience reference string
-    patient_ref = f"Patient/{patient_id}"
-
     # ============================================================
-    # 1. CONDITIONS  (SNOMED + ICD-10 when possible)
+    # 1. CONDITIONS  (RAG + SNOMED + ICD-10)
     # ============================================================
     for condition in entities.conditions:
-        # Try SNOMED first, then ICD-10 as fallback
-        coding = lookup_snomed(condition) or lookup_icd10(condition)
-
-        resource = {
+        condition_resource = {
             "resourceType": "Condition",
             "id": make_id(),
             "subject": {"reference": patient_ref},
-            "code": {
-                "text": condition
-            }
+            "code": build_condition_code(condition),
         }
-        # If we found a coding, add it under code.coding
-        if coding:
-            resource["code"]["coding"] = [coding]
+        bundle["entry"].append({"resource": condition_resource})
 
-        bundle["entry"].append({"resource": resource})
-
-    # Assessment summary → treat as Condition (problem/assessment)
+    # Assessment summary → also a Condition
     if entities.assessment and entities.assessment.summary:
         summary_text = entities.assessment.summary
-        code_obj: Dict[str, Any] = {"text": summary_text}
-        coding_array = []
-
-        snomed = lookup_snomed(summary_text)
-        if snomed:
-            coding_array.append(snomed)
-
-        icd10 = lookup_icd10(summary_text)
-        if icd10:
-            coding_array.append(icd10)
-
-        if coding_array:
-            code_obj["coding"] = coding_array
-
-        resource = {
+        assessment_resource = {
             "resourceType": "Condition",
             "id": make_id(),
             "subject": {"reference": patient_ref},
-            "code": code_obj,
+            "code": build_condition_code(summary_text),
         }
-        bundle["entry"].append({"resource": resource})
+        bundle["entry"].append({"resource": assessment_resource})
 
     # ============================================================
     # 2. SYMPTOMS → Observations
@@ -130,7 +211,7 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             "valueString": symptom.name,
         }
 
-        notes = []
+        notes: List[Dict[str, str]] = []
         if symptom.duration:
             notes.append({"text": f"Duration: {symptom.duration}"})
         if symptom.severity:
@@ -144,81 +225,69 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     # 3. VITALS → Observations
     # ============================================================
     for vit in entities.vitals:
-        obs: Dict[str, Any] = {
+        vital_obs: Dict[str, Any] = {
             "resourceType": "Observation",
             "id": make_id(),
             "subject": {"reference": patient_ref},
             "code": {"text": vit.type},
-            "valueQuantity": {}
+            "valueQuantity": {},
         }
 
         if vit.value is not None:
             try:
-                obs["valueQuantity"]["value"] = float(vit.value)
+                vital_obs["valueQuantity"]["value"] = float(vit.value)
             except Exception:
-                obs["valueQuantity"]["value"] = vit.value
+                vital_obs["valueQuantity"]["value"] = vit.value
 
         if vit.unit:
-            obs["valueQuantity"]["unit"] = vit.unit
+            vital_obs["valueQuantity"]["unit"] = vit.unit
 
-        if not obs["valueQuantity"]:
-            del obs["valueQuantity"]
+        if not vital_obs["valueQuantity"]:
+            del vital_obs["valueQuantity"]
 
-        bundle["entry"].append({"resource": obs})
+        bundle["entry"].append({"resource": vital_obs})
 
     # ============================================================
     # 4. LABS → Observations (LOINC when possible)
     # ============================================================
     for lab in entities.labs:
-        # Try to map to LOINC
-        coding = lookup_loinc(lab.test)
-
-        obs: Dict[str, Any] = {
+        lab_obs: Dict[str, Any] = {
             "resourceType": "Observation",
             "id": make_id(),
             "subject": {"reference": patient_ref},
-            "code": {
-                "text": lab.test
-            },
-            "valueQuantity": {}
+            "code": build_lab_code(lab.test),
+            "valueQuantity": {},
         }
-
-        if coding:
-            obs["code"]["coding"] = [coding]
 
         if lab.value is not None:
             try:
-                obs["valueQuantity"]["value"] = float(lab.value)
+                lab_obs["valueQuantity"]["value"] = float(lab.value)
             except Exception:
-                obs["valueQuantity"]["value"] = lab.value
+                lab_obs["valueQuantity"]["value"] = lab.value
 
         if lab.unit:
-            obs["valueQuantity"]["unit"] = lab.unit
+            lab_obs["valueQuantity"]["unit"] = lab.unit
 
         if lab.interpretation:
-            obs["interpretation"] = [{"text": lab.interpretation}]
+            lab_obs["interpretation"] = [{"text": lab.interpretation}]
 
-        if not obs["valueQuantity"]:
-            del obs["valueQuantity"]
+        if not lab_obs["valueQuantity"]:
+            del lab_obs["valueQuantity"]
 
-        bundle["entry"].append({"resource": obs})
+        bundle["entry"].append({"resource": lab_obs})
 
     # ============================================================
     # 5. MEDICATIONS → MedicationStatement (RxNorm when possible)
     # ============================================================
     for med in entities.medications:
-        coding = lookup_rxnorm(med.name)
         med_res: Dict[str, Any] = {
             "resourceType": "MedicationStatement",
             "id": make_id(),
             "subject": {"reference": patient_ref},
-            "medicationCodeableConcept": {"text": med.name},
+            "medicationCodeableConcept": build_medication_code(med.name),
         }
 
-        if coding:
-            med_res["medicationCodeableConcept"]["coding"] = [coding]
-
-        dosage_parts = []
+        dosage_parts: List[str] = []
         if med.dose:
             dosage_parts.append(med.dose)
         if med.frequency:
@@ -232,7 +301,7 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         bundle["entry"].append({"resource": med_res})
 
     # ============================================================
-    # 6. PROCEDURES
+    # 6. PROCEDURES → Procedure
     # ============================================================
     for proc in entities.procedures:
         proc_res = {
@@ -255,10 +324,12 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         }
 
         if allergy.reaction:
-            al_res["reaction"] = [{
-                "description": allergy.reaction,
-                "manifestation": [{"text": allergy.reaction}]
-            }]
+            al_res["reaction"] = [
+                {
+                    "description": allergy.reaction,
+                    "manifestation": [{"text": allergy.reaction}],
+                }
+            ]
 
         bundle["entry"].append({"resource": al_res})
 
@@ -276,10 +347,12 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         }
 
         if img.finding:
-            diag["presentedForm"] = [{
-                "contentType": "text/plain",
-                "data": img.finding
-            }]
+            diag["presentedForm"] = [
+                {
+                    "contentType": "text/plain",
+                    "data": img.finding,
+                }
+            ]
 
         bundle["entry"].append({"resource": diag})
 
@@ -292,13 +365,12 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             "id": make_id(),
             "subject": {"reference": patient_ref},
             "code": {"text": f"Physical exam of {exam.body_part}"},
-            "valueString": exam.finding
+            "valueString": exam.finding,
         }
-
         bundle["entry"].append({"resource": exam_obs})
 
     # ============================================================
-    # 10. FAMILY HISTORY
+    # 10. FAMILY HISTORY → FamilyMemberHistory
     # ============================================================
     for fh in entities.family_history:
         fam = {
@@ -315,46 +387,52 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         bundle["entry"].append({"resource": fam})
 
     # ============================================================
-    # 11. SOCIAL HISTORY → Observations
+    # 11. SOCIAL HISTORY → Observations (social-history category)
     # ============================================================
     if entities.social_history:
         sh = entities.social_history
 
         if sh.smoking_status:
-            bundle["entry"].append({
-                "resource": {
-                    "resourceType": "Observation",
-                    "id": make_id(),
-                    "subject": {"reference": patient_ref},
-                    "category": [{"text": "social-history"}],
-                    "code": {"text": "smoking status"},
-                    "valueString": sh.smoking_status,
+            bundle["entry"].append(
+                {
+                    "resource": {
+                        "resourceType": "Observation",
+                        "id": make_id(),
+                        "subject": {"reference": patient_ref},
+                        "category": [{"text": "social-history"}],
+                        "code": {"text": "smoking status"},
+                        "valueString": sh.smoking_status,
+                    }
                 }
-            })
+            )
 
         if sh.alcohol_use:
-            bundle["entry"].append({
-                "resource": {
-                    "resourceType": "Observation",
-                    "id": make_id(),
-                    "subject": {"reference": patient_ref},
-                    "category": [{"text": "social-history"}],
-                    "code": {"text": "alcohol use"},
-                    "valueString": sh.alcohol_use,
+            bundle["entry"].append(
+                {
+                    "resource": {
+                        "resourceType": "Observation",
+                        "id": make_id(),
+                        "subject": {"reference": patient_ref},
+                        "category": [{"text": "social-history"}],
+                        "code": {"text": "alcohol use"},
+                        "valueString": sh.alcohol_use,
+                    }
                 }
-            })
+            )
 
         if sh.occupation:
-            bundle["entry"].append({
-                "resource": {
-                    "resourceType": "Observation",
-                    "id": make_id(),
-                    "subject": {"reference": patient_ref},
-                    "category": [{"text": "social-history"}],
-                    "code": {"text": "occupation"},
-                    "valueString": sh.occupation,
+            bundle["entry"].append(
+                {
+                    "resource": {
+                        "resourceType": "Observation",
+                        "id": make_id(),
+                        "subject": {"reference": patient_ref},
+                        "category": [{"text": "social-history"}],
+                        "code": {"text": "occupation"},
+                        "valueString": sh.occupation,
+                    }
                 }
-            })
+            )
 
     # ============================================================
     # 12. PLAN → CarePlan
@@ -369,9 +447,8 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             "activity": [
                 {"detail": {"description": action}}
                 for action in entities.plan.actions
-            ]
+            ],
         }
-
         bundle["entry"].append({"resource": care_plan})
 
     return bundle

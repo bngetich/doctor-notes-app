@@ -6,3 +6,5 @@ openai
 python-dotenv
 tenacity
 pytest
+faiss-cpu
+numpy

@@ -1,0 +1,122 @@
+[
+  {
+    "text": "SNOMED term: type 2 diabetes | synonyms: diabetes mellitus type 2;T2DM;diabetes | code: 44054006",
+    "system": "snomed",
+    "code": "44054006",
+    "display": "type 2 diabetes mellitus"
+  },
+  {
+    "text": "SNOMED term: hypertension | synonyms: high blood pressure;HTN | code: 271327008",
+    "system": "snomed",
+    "code": "271327008",
+    "display": "essential hypertension"
+  },
+  {
+    "text": "SNOMED term: asthma | synonyms: reactive airway disease | code: 195967001",
+    "system": "snomed",
+    "code": "195967001",
+    "display": "asthma"
+  },
+  {
+    "text": "SNOMED term: heart failure | synonyms: HF;CHF;congestive heart failure | code: 49727002",
+    "system": "snomed",
+    "code": "49727002",
+    "display": "heart failure"
+  },
+  {
+    "text": "SNOMED term: fatigue | synonyms: tiredness;exhaustion | code: 313386006",
+    "system": "snomed",
+    "code": "313386006",
+    "display": "fatigue"
+  },
+  {
+    "text": "ICD10 term: type 2 diabetes mellitus without complications | code: E11.9",
+    "system": "icd10",
+    "code": "E11.9",
+    "display": "type 2 diabetes mellitus without complications"
+  },
+  {
+    "text": "ICD10 term: essential (primary) hypertension | code: I10",
+    "system": "icd10",
+    "code": "I10",
+    "display": "essential (primary) hypertension"
+  },
+  {
+    "text": "ICD10 term: unspecified asthma | code: J45.909",
+    "system": "icd10",
+    "code": "J45.909",
+    "display": "unspecified asthma"
+  },
+  {
+    "text": "ICD10 term: other fatigue | code: R53.83",
+    "system": "icd10",
+    "code": "R53.83",
+    "display": "other fatigue"
+  },
+  {
+    "text": "ICD10 term: heart failure | code: I50.9",
+    "system": "icd10",
+    "code": "I50.9",
+    "display": "heart failure"
+  },
+  {
+    "text": "RxNorm medication: metformin | synonyms: Glucophage;metformin hydrochloride | code: 860975",
+    "system": "rxnorm",
+    "code": "860975",
+    "display": "metformin"
+  },
+  {
+    "text": "RxNorm medication: lisinopril | synonyms: Zestril;Prinivil | code: 861006",
+    "system": "rxnorm",
+    "code": "861006",
+    "display": "lisinopril"
+  },
+  {
+    "text": "RxNorm medication: albuterol | synonyms: Salbutamol;Ventolin | code: 352372",
+    "system": "rxnorm",
+    "code": "352372",
+    "display": "albuterol"
+  },
+  {
+    "text": "RxNorm medication: ibuprofen | synonyms: Advil;Motrin | code: 198211",
+    "system": "rxnorm",
+    "code": "198211",
+    "display": "ibuprofen"
+  },
+  {
+    "text": "RxNorm medication: atorvastatin | synonyms: Lipitor | code: 617314",
+    "system": "rxnorm",
+    "code": "617314",
+    "display": "atorvastatin"
+  },
+  {
+    "text": "LOINC test: HbA1c | code: 4548-4",
+    "system": "loinc",
+    "code": "4548-4",
+    "display": "Hemoglobin A1c/Hemoglobin.total"
+  },
+  {
+    "text": "LOINC test: HDL | code: 2085-9",
+    "system": "loinc",
+    "code": "2085-9",
+    "display": "HDL Cholesterol"
+  },
+  {
+    "text": "LOINC test: hemoglobin | code: 718-7",
+    "system": "loinc",
+    "code": "718-7",
+    "display": "Hemoglobin"
+  },
+  {
+    "text": "LOINC test: Systolic Blood Pressure | code: 8480-6",
+    "system": "loinc",
+    "code": "8480-6",
+    "display": "Systolic blood pressure"
+  },
+  {
+    "text": "LOINC test: Diastolic Blood Pressure | code: 8462-4",
+    "system": "loinc",
+    "code": "8462-4",
+    "display": "Diastolic blood pressure"
+  }
+]
