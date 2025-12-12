@@ -6,6 +6,7 @@ from services.summarizer_service import summarize
 from services.extractor_service import extract_entities
 from services.normalization_service import normalize_entities
 from services.fhir_service import generate_fhir_resource
+from services.validation_service import validate_entities
 from models.extract_models import ExtractResponse
 from models.pipeline_models import PipelineRequest, PipelineResponse
 from models.fhir_models import FhirBundleResponse
@@ -38,6 +39,8 @@ def run_pipeline(payload: PipelineRequest) -> PipelineResponse:
     # 3. Normalization
     # --------------------------------
     clean_entities = normalize_entities(raw_entities)
+    
+    validate_entities(clean_entities)
 
     # --------------------------------
     # 4. Convert dict → ExtractResponse model
