@@ -119,10 +119,11 @@ graph TD
 
 # 📍 Design Principles
 
---- LLM → noisy; Normalizer → stable; FHIR → strict
---- Keep services modular & testable
---- Allow local or cloud LLMs
+- LLM → noisy; Normalizer → stable; FHIR → strict
+- Keep services modular & testable
+- Allow local or cloud LLMs
 
 ---
 
 # ✔️ End of architecture.md
+
