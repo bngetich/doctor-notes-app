@@ -10,6 +10,7 @@ from services.knowledge_service import (
     lookup_rxnorm,
     lookup_loinc,
 )
+from services.validation_service import validate_rag_coding
 from rag.rag_search import rag_lookup
 
 
@@ -73,7 +74,7 @@ def build_condition_code(term: str) -> Dict[str, Any]:
     if rag_results:
         best_candidate = rag_results[0]
         validated = validate_condition_coding(term, best_candidate)
-        if validated:
+        if validated and validate_rag_coding(validated):
             coding_list.append(validated)
 
     # ------- 2. Fallback to SNOMED / ICD-10 lookups -------
