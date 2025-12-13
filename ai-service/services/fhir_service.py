@@ -1,6 +1,7 @@
 # ai-service/services/fhir_service.py
 
 import uuid
+import logging
 from typing import Dict, Any, List, Optional
 
 from models.extract_models import ExtractResponse
@@ -13,6 +14,8 @@ from services.knowledge_service import (
 from services.validation_service import validate_rag_coding
 from rag.rag_search import rag_lookup
 
+logger = logging.getLogger(__name__)
+
 
 def make_id() -> str:
     """
@@ -21,7 +24,9 @@ def make_id() -> str:
     return str(uuid.uuid4())
 
 
-def validate_condition_coding(term: str, coding: Dict[str, str]) -> Optional[Dict[str, str]]:
+def validate_condition_coding(
+    term: str, coding: Dict[str, str]
+) -> Optional[Dict[str, str]]:
     """
     Validate a RAG-returned coding against local CSV vocabulary.
 
@@ -75,17 +80,44 @@ def build_condition_code(term: str) -> Dict[str, Any]:
         best_candidate = rag_results[0]
         validated = validate_condition_coding(term, best_candidate)
         if validated and validate_rag_coding(validated):
+            logger.info(
+                "[TERMINOLOGY] RAG accepted | term='%s' | system=%s | code=%s",
+                term,
+                validated.get("system"),
+                validated.get("code"),
+            )
             coding_list.append(validated)
+        else:
+            logger.warning(
+                "[TERMINOLOGY] RAG rejected | term='%s' | candidate=%s",
+                term,
+                best_candidate,
+            )
 
     # ------- 2. Fallback to SNOMED / ICD-10 lookups -------
     if not coding_list:
         snomed = lookup_snomed(term)
         if snomed:
+            logger.info(
+                "[TERMINOLOGY] CSV fallback SNOMED | term='%s' | code=%s",
+                term,
+                snomed.get("code"),
+            )
             coding_list.append(snomed)
+        else:
+            logger.warning(
+                "[TERMINOLOGY] No SNOMED match found | term='%s'",
+                term,
+            )
 
     # ICD-10 can be added alongside SNOMED
     icd10 = lookup_icd10(term)
     if icd10:
+        logger.info(
+            "[TERMINOLOGY] ICD-10 added | term='%s' | code=%s",
+            term,
+            icd10.get("code"),
+        )
         coding_list.append(icd10)
 
     if coding_list:
@@ -446,8 +478,7 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             "status": "active",
             "intent": "plan",
             "activity": [
-                {"detail": {"description": action}}
-                for action in entities.plan.actions
+                {"detail": {"description": action}} for action in entities.plan.actions
             ],
         }
         bundle["entry"].append({"resource": care_plan})
