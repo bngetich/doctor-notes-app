@@ -131,15 +131,15 @@ def build_lab_code(test_name: str) -> Dict[str, Any]:
     Build code object for lab Observations using LOINC when possible.
     """
     code_obj: Dict[str, Any] = {
-        "text": test_name,
-        "coding": []
+        "text": test_name
     }
 
     loinc = lookup_loinc(test_name)
     if loinc:
-        code_obj["coding"].append(loinc)
+        code_obj["coding"] = [loinc]
 
     return code_obj
+
 
 
 def build_medication_code(med_name: str) -> Dict[str, Any]:
@@ -147,13 +147,12 @@ def build_medication_code(med_name: str) -> Dict[str, Any]:
     Build medicationCodeableConcept using RxNorm where available.
     """
     med_code: Dict[str, Any] = {
-        "text": med_name,
-        "coding": []
-        }
+        "text": med_name
+    }
 
     rx = lookup_rxnorm(med_name)
     if rx:
-        med_code["coding"].append(rx)
+        med_code["coding"] = [rx]
 
     return med_code
 
