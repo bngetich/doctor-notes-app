@@ -1,23 +1,74 @@
 # 🏗️ System Architecture
 
-This file explains how all components in the backend work together.
+This document describes how the backend components cooperate to transform unstructured clinical text into a validated, interoperable HL7 FHIR Bundle.
+
+The system is designed to prioritize **clinical correctness, determinism where required, and controlled use of LLMs**.
 
 ---
 
-# ⚙️ High-Level Architecture
+## 🧠 Terminology Coding Strategy (Design Rationale)
+
+This system intentionally applies **different coding strategies** depending on the clinical terminology being mapped, based on how those concepts appear in real-world clinical text and how they are handled in production EHR systems.
+
+### Deterministic Lookup (RxNorm, LOINC)
+
+**RxNorm (medications)** and **LOINC (labs and measurements)** are mapped using normalized string and synonym lookup rather than semantic retrieval.
+
+This is by design:
+
+- Medication and lab names typically appear **explicitly and consistently** in clinical notes
+- Surface-form variation is limited and enumerable (brand vs generic, common abbreviations)
+- Deterministic lookup provides **higher precision, reproducibility, and auditability**
+- Incorrect medication or lab codes are **clinically riskier than missing codes**
+
+For these terminologies, semantic retrieval would add latency and hallucination risk without improving accuracy.
+
+### Semantic Retrieval (SNOMED CT, ICD-10)
+
+**SNOMED CT** and **ICD-10** represent higher-level clinical concepts such as conditions, symptoms, and diagnoses that are frequently **paraphrased, inferred, or context-dependent**.
+
+Examples include:
+- “shortness of breath” → “dyspnea”
+- “chest tightness on exertion” → “angina”
+
+For these cases, the system uses embedding-based semantic retrieval (RAG-style) to map free-text concepts to standardized codes.
+
+### Alignment with Real Clinical Pipelines
+
+This hybrid strategy mirrors how production healthcare systems operate:
+
+| Terminology | Coding Strategy |
+|------------|----------------|
+| RxNorm | Deterministic lookup |
+| LOINC | Deterministic lookup |
+| SNOMED CT | NLP + semantic matching |
+| ICD-10 | Concept mapping and rules |
+
+Semantic retrieval is applied **only where ambiguity exists**, reducing hallucination risk while preserving interoperability.
+
+---
+
+## ⚙️ High-Level Architecture
 
 The backend is composed of four cooperating subsystems:
 
-1. **Summarizer Service** → LLM converts raw text → concise structured summary  
-2. **Extractor Service** → LLM extracts structured medical entities in strict JSON  
-3. **Normalization Service** → cleans the extracted data and ensures consistency  
-4. **FHIR Service** → converts normalized entities → HL7 FHIR Bundle  
+1. **Summarizer Service**  
+   Uses an LLM to convert raw encounter text into a concise, EMR-style clinical summary.
 
-These are orchestrated by `pipeline_service.py`.
+2. **Extractor Service**  
+   Uses an LLM with a strict JSON schema to extract structured clinical entities.
+
+3. **Normalization Service**  
+   Cleans, validates, and stabilizes extracted entities to ensure deterministic downstream processing.
+
+4. **FHIR Service**  
+   Converts normalized entities into HL7 FHIR–compliant resources and bundles.
+
+These components are orchestrated by `pipeline_service.py`, which enforces execution order and validation boundaries.
 
 ---
 
-# 🚦 Pipeline Sequence Diagram
+## 🚦 Pipeline Sequence Diagram
 
 ```mermaid
 sequenceDiagram
@@ -51,9 +102,6 @@ sequenceDiagram
 
 ---
 
-# 🧱 Backend Layered Architecture
-
-```mermaid
 graph TD
         subgraph Routes
                 R1[summarize_routes.py]

@@ -1,6 +1,7 @@
 # ai-service/services/fhir_service.py
 
 import uuid
+import logging
 from typing import Dict, Any, List, Optional
 
 from models.extract_models import ExtractResponse
@@ -10,7 +11,10 @@ from services.knowledge_service import (
     lookup_rxnorm,
     lookup_loinc,
 )
+from services.validation_service import validate_rag_coding_shape
 from rag.rag_search import rag_lookup
+
+logger = logging.getLogger(__name__)
 
 
 def make_id() -> str:
@@ -20,9 +24,11 @@ def make_id() -> str:
     return str(uuid.uuid4())
 
 
-def validate_condition_coding(term: str, coding: Dict[str, str]) -> Optional[Dict[str, str]]:
+def verify_coding_against_vocab(
+    term: str, coding: Dict[str, str]
+) -> Optional[Dict[str, str]]:
     """
-    Validate a RAG-returned coding against local CSV vocabulary.
+    Verify a RAG-returned coding against local CSV vocabulary.
 
     We treat the CSV-backed lookup (lookup_snomed / lookup_icd10)
     as the source of truth.
@@ -52,7 +58,7 @@ def build_condition_code(term: str) -> Dict[str, Any]:
     Build the FHIR 'code' object for a Condition, using:
 
       1. RAG semantic search (rag_lookup) for SNOMED/ICD candidates
-      2. Validation against CSV vocabulary (validate_condition_coding)
+      2. Validation against CSV vocabulary (verify_coding_against_vocab)
       3. Fallback to direct lookup_snomed / lookup_icd10
 
     Returns a dict like:
@@ -72,19 +78,47 @@ def build_condition_code(term: str) -> Dict[str, Any]:
 
     if rag_results:
         best_candidate = rag_results[0]
-        validated = validate_condition_coding(term, best_candidate)
-        if validated:
-            coding_list.append(validated)
+        if validate_rag_coding_shape(best_candidate):
+            verified = verify_coding_against_vocab(term, best_candidate)
+            if verified:
+                logger.info(
+                    "[TERMINOLOGY] RAG accepted | term='%s' | system=%s | code=%s",
+                    term,
+                    verified.get("system"),
+                    verified.get("code"),
+                )
+                coding_list.append(verified)
+        else:
+            logger.warning(
+                "[TERMINOLOGY] RAG rejected | term='%s' | candidate=%s",
+                term,
+                best_candidate,
+            )
 
     # ------- 2. Fallback to SNOMED / ICD-10 lookups -------
     if not coding_list:
         snomed = lookup_snomed(term)
         if snomed:
+            logger.info(
+                "[TERMINOLOGY] CSV fallback SNOMED | term='%s' | code=%s",
+                term,
+                snomed.get("code"),
+            )
             coding_list.append(snomed)
+        else:
+            logger.warning(
+                "[TERMINOLOGY] No SNOMED match found | term='%s'",
+                term,
+            )
 
     # ICD-10 can be added alongside SNOMED
     icd10 = lookup_icd10(term)
     if icd10:
+        logger.info(
+            "[TERMINOLOGY] ICD-10 added | term='%s' | code=%s",
+            term,
+            icd10.get("code"),
+        )
         coding_list.append(icd10)
 
     if coding_list:
@@ -97,7 +131,9 @@ def build_lab_code(test_name: str) -> Dict[str, Any]:
     """
     Build code object for lab Observations using LOINC when possible.
     """
-    code_obj: Dict[str, Any] = {"text": test_name}
+    code_obj: Dict[str, Any] = {
+        "text": test_name
+    }
 
     loinc = lookup_loinc(test_name)
     if loinc:
@@ -445,8 +481,7 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             "status": "active",
             "intent": "plan",
             "activity": [
-                {"detail": {"description": action}}
-                for action in entities.plan.actions
+                {"detail": {"description": action}} for action in entities.plan.actions
             ],
         }
         bundle["entry"].append({"resource": care_plan})
