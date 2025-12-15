@@ -141,14 +141,11 @@ def build_lab_code(test_name: str) -> Dict[str, Any]:
     return code_obj
 
 
-
 def build_medication_code(med_name: str) -> Dict[str, Any]:
     """
     Build medicationCodeableConcept using RxNorm where available.
     """
-    med_code: Dict[str, Any] = {
-        "text": med_name
-    }
+    med_code: Dict[str, Any] = {"text": med_name}
 
     rx = lookup_rxnorm(med_name)
     if rx:

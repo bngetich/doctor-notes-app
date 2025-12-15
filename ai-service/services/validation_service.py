@@ -87,7 +87,7 @@ def validate_rag_coding(coding: Dict[str, str]) -> Optional[Dict[str, str]]:
     code = coding.get("code")
     display = coding.get("display")
 
-    if not system not in ALLOWED_SYSTEMS:
+    if system not in ALLOWED_SYSTEMS:
         return None
     
     if not code or not isinstance(code, str):
