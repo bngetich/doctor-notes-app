@@ -130,9 +130,7 @@ def build_lab_code(test_name: str) -> Dict[str, Any]:
     """
     Build code object for lab Observations using LOINC when possible.
     """
-    code_obj: Dict[str, Any] = {
-        "text": test_name
-    }
+    code_obj: Dict[str, Any] = {"text": test_name}
 
     loinc = lookup_loinc(test_name)
     if loinc:
