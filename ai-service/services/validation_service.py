@@ -71,7 +71,7 @@ def validate_entities(entities: Dict[str, Any]) -> None:
             detail="No structured clinical entities were extracted from the note."
         )
 
-def validate_rag_coding(coding: Dict[str, str]) -> Optional[Dict[str, str]]:
+def validate_rag_coding_shape(coding: Dict[str, str]) -> Optional[Dict[str, str]]:
     """
     Validate shape + system of a RAG-produced coding.
 

@@ -11,7 +11,7 @@ from services.knowledge_service import (
     lookup_rxnorm,
     lookup_loinc,
 )
-from services.validation_service import validate_rag_coding
+from services.validation_service import validate_rag_coding_shape
 from rag.rag_search import rag_lookup
 
 logger = logging.getLogger(__name__)
@@ -24,11 +24,11 @@ def make_id() -> str:
     return str(uuid.uuid4())
 
 
-def validate_condition_coding(
+def verify_coding_against_vocab(
     term: str, coding: Dict[str, str]
 ) -> Optional[Dict[str, str]]:
     """
-    Validate a RAG-returned coding against local CSV vocabulary.
+    Verify a RAG-returned coding against local CSV vocabulary.
 
     We treat the CSV-backed lookup (lookup_snomed / lookup_icd10)
     as the source of truth.
@@ -58,7 +58,7 @@ def build_condition_code(term: str) -> Dict[str, Any]:
     Build the FHIR 'code' object for a Condition, using:
 
       1. RAG semantic search (rag_lookup) for SNOMED/ICD candidates
-      2. Validation against CSV vocabulary (validate_condition_coding)
+      2. Validation against CSV vocabulary (verify_coding_against_vocab)
       3. Fallback to direct lookup_snomed / lookup_icd10
 
     Returns a dict like:
@@ -78,15 +78,16 @@ def build_condition_code(term: str) -> Dict[str, Any]:
 
     if rag_results:
         best_candidate = rag_results[0]
-        validated = validate_condition_coding(term, best_candidate)
-        if validated and validate_rag_coding(validated):
-            logger.info(
-                "[TERMINOLOGY] RAG accepted | term='%s' | system=%s | code=%s",
-                term,
-                validated.get("system"),
-                validated.get("code"),
-            )
-            coding_list.append(validated)
+        if validate_rag_coding_shape(best_candidate):
+            verified = verify_coding_against_vocab(term, best_candidate)
+            if verified:
+                logger.info(
+                    "[TERMINOLOGY] RAG accepted | term='%s' | system=%s | code=%s",
+                    term,
+                    verified.get("system"),
+                    verified.get("code"),
+                )
+                coding_list.append(verified)
         else:
             logger.warning(
                 "[TERMINOLOGY] RAG rejected | term='%s' | candidate=%s",
