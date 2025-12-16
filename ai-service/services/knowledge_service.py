@@ -1,18 +1,10 @@
 import csv
 import os
 from typing import Dict, Optional, List
+from services.terminology_normalization import normalize_clinical_term
+
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-
-
-# ---------------------------------------------------------
-# Utility: normalize search terms
-# ---------------------------------------------------------
-def normalize(text: str) -> str:
-    if not text:
-        return ""
-    return text.strip().lower()
-
 
 # ---------------------------------------------------------
 # Load CSV into memory (simple & fast for demo)
@@ -49,10 +41,10 @@ def lookup_snomed(term: str) -> Optional[Dict[str, str]]:
         "display": "Type 2 diabetes mellitus"
      }
     """
-    t = normalize(term)
+    t = normalize_clinical_term(term)
 
     for row in SNOMED_DATA:
-        if normalize(row["term"]) == t:
+        if normalize_clinical_term(row["term"]) == t:
             return {
                 "system": "http://snomed.info/sct",
                 "code": row["code"],
@@ -62,7 +54,7 @@ def lookup_snomed(term: str) -> Optional[Dict[str, str]]:
         # match synonyms
         if row.get("synonyms"):
             for s in row["synonyms"].split(","):
-                if normalize(s) == t:
+                if normalize_clinical_term(s) == t:
                     return {
                         "system": "http://snomed.info/sct",
                         "code": row["code"],
@@ -75,10 +67,10 @@ def lookup_snomed(term: str) -> Optional[Dict[str, str]]:
 # ICD-10 LOOKUP
 # =====================================================================
 def lookup_icd10(term: str) -> Optional[Dict[str, str]]:
-    t = normalize(term)
+    t = normalize_clinical_term(term)
 
     for row in ICD10_DATA:
-        if normalize(row["term"]) == t:
+        if normalize_clinical_term(row["term"]) == t:
             return {
                 "system": "http://hl7.org/fhir/sid/icd-10-cm",
                 "code": row["code"],
@@ -92,10 +84,10 @@ def lookup_icd10(term: str) -> Optional[Dict[str, str]]:
 # RxNorm LOOKUP (medications)
 # =====================================================================
 def lookup_rxnorm(name: str) -> Optional[Dict[str, str]]:
-    n = normalize(name)
+    n = normalize_clinical_term(name)
 
     for row in RXNORM_DATA:
-        if normalize(row["name"]) == n:
+        if normalize_clinical_term(row["name"]) == n:
             return {
                 "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
                 "code": row["rxnorm"],
@@ -104,7 +96,7 @@ def lookup_rxnorm(name: str) -> Optional[Dict[str, str]]:
 
         if row.get("synonyms"):
             for s in row["synonyms"].split(","):
-                if normalize(s) == n:
+                if normalize_clinical_term(s) == n:
                     return {
                         "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
                         "code": row["rxnorm"],
@@ -118,10 +110,10 @@ def lookup_rxnorm(name: str) -> Optional[Dict[str, str]]:
 # LOINC LOOKUP (labs)
 # =====================================================================
 def lookup_loinc(test: str) -> Optional[Dict[str, str]]:
-    t = normalize(test)
+    t = normalize_clinical_term(test)
 
     for row in LOINC_DATA:
-        if normalize(row["test"]) == t:
+        if normalize_clinical_term(row["test"]) == t:
             return {
                 "system": "http://loinc.org",
                 "code": row["code"],
