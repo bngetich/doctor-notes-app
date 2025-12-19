@@ -41,19 +41,21 @@ LOINC_DATA = load_csv("loinc.csv")
 
 def lookup_snomed(term: Optional[str]) -> Optional[Dict[str, str]]:
     """
-    Resolve a condition term to SNOMED CT using deterministic normalization.
-
-    - Original input text is NEVER modified
-    - Normalization is applied only for lookup comparison
+    Return SNOMED coding object for a condition.
+    Example return:
+    {
+        "system": "http://snomed.info/sct",
+        "code": "44054006",
+        "display": "Type 2 diabetes mellitus"
+     }
     """
-
     if not term:
         return None
 
     normalized_input = normalize_condition_term(term)
 
     for row in SNOMED_DATA:
-        # Match primary term
+        # 1. Match primary term
         if normalize_condition_term(row["term"]) == normalized_input:
             return {
                 "system": "http://snomed.info/sct",
@@ -61,10 +63,18 @@ def lookup_snomed(term: Optional[str]) -> Optional[Dict[str, str]]:
                 "display": row["preferred"],
             }
 
-        # Match synonyms
+        # 2. Match preferred term
+        if normalize_condition_term(row["preferred"]) == normalized_input:
+            return {
+                "system": "http://snomed.info/sct",
+                "code": row["code"],
+                "display": row["preferred"],
+            }
+
+        # 3. Match synonyms
         synonyms = row.get("synonyms")
         if synonyms:
-            for s in synonyms.split(","):
+            for s in synonyms.split(";"):
                 if normalize_condition_term(s) == normalized_input:
                     return {
                         "system": "http://snomed.info/sct",
