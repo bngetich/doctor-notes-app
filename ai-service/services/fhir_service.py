@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # Utilities
 # ---------------------------------------------------------
 
+
 def make_id() -> str:
     """Generate a random UUID for FHIR resource IDs."""
     return str(uuid.uuid4())
@@ -24,6 +25,7 @@ def make_id() -> str:
 # ---------------------------------------------------------
 # Main FHIR generator
 # ---------------------------------------------------------
+
 
 def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
     """
@@ -87,18 +89,19 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
 
         bundle["entry"].append({"resource": condition_resource})
 
-    # Assessment summary as a Condition
+    # ---------------------------------------------------------
+    # Assessment → ClinicalImpression
+    # ---------------------------------------------------------
     if entities.assessment and entities.assessment.summary:
-        concept = resolve_condition(entities.assessment.summary)
-
-        assessment_resource = {
-            "resourceType": "Condition",
+        clinical_impression = {
+            "resourceType": "ClinicalImpression",
             "id": make_id(),
+            "status": "completed",
             "subject": {"reference": patient_ref},
-            "code": concept,
+            "summary": entities.assessment.summary,
         }
 
-        bundle["entry"].append({"resource": assessment_resource})
+        bundle["entry"].append({"resource": clinical_impression})
 
     # ---------------------------------------------------------
     # Symptoms → Observations
@@ -303,40 +306,46 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
         sh = entities.social_history
 
         if sh.smoking_status:
-            bundle["entry"].append({
-                "resource": {
-                    "resourceType": "Observation",
-                    "id": make_id(),
-                    "subject": {"reference": patient_ref},
-                    "category": [{"text": "social-history"}],
-                    "code": {"text": "smoking status"},
-                    "valueString": sh.smoking_status,
+            bundle["entry"].append(
+                {
+                    "resource": {
+                        "resourceType": "Observation",
+                        "id": make_id(),
+                        "subject": {"reference": patient_ref},
+                        "category": [{"text": "social-history"}],
+                        "code": {"text": "smoking status"},
+                        "valueString": sh.smoking_status,
+                    }
                 }
-            })
+            )
 
         if sh.alcohol_use:
-            bundle["entry"].append({
-                "resource": {
-                    "resourceType": "Observation",
-                    "id": make_id(),
-                    "subject": {"reference": patient_ref},
-                    "category": [{"text": "social-history"}],
-                    "code": {"text": "alcohol use"},
-                    "valueString": sh.alcohol_use,
+            bundle["entry"].append(
+                {
+                    "resource": {
+                        "resourceType": "Observation",
+                        "id": make_id(),
+                        "subject": {"reference": patient_ref},
+                        "category": [{"text": "social-history"}],
+                        "code": {"text": "alcohol use"},
+                        "valueString": sh.alcohol_use,
+                    }
                 }
-            })
+            )
 
         if sh.occupation:
-            bundle["entry"].append({
-                "resource": {
-                    "resourceType": "Observation",
-                    "id": make_id(),
-                    "subject": {"reference": patient_ref},
-                    "category": [{"text": "social-history"}],
-                    "code": {"text": "occupation"},
-                    "valueString": sh.occupation,
+            bundle["entry"].append(
+                {
+                    "resource": {
+                        "resourceType": "Observation",
+                        "id": make_id(),
+                        "subject": {"reference": patient_ref},
+                        "category": [{"text": "social-history"}],
+                        "code": {"text": "occupation"},
+                        "valueString": sh.occupation,
+                    }
                 }
-            })
+            )
 
     # ---------------------------------------------------------
     # Plan → CarePlan
@@ -349,8 +358,7 @@ def generate_fhir_resource(entities: ExtractResponse) -> Dict[str, Any]:
             "status": "active",
             "intent": "plan",
             "activity": [
-                {"detail": {"description": action}}
-                for action in entities.plan.actions
+                {"detail": {"description": action}} for action in entities.plan.actions
             ],
         }
 
