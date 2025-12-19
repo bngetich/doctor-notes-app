@@ -1,4 +1,4 @@
-# 🩺 LLM-Powered Clinical Note App
+# LLM-Powered Clinical Note App
 
 This application converts unstructured clinical text into **structured, interoperable medical data** using a full LLM pipeline:
 
@@ -6,7 +6,7 @@ This application converts unstructured clinical text into **structured, interope
 
 It is designed for doctor-patient encounter documentation, EHR integration, and AI-assisted clinical workflows.
 
-## 🚀 Overview
+## Overview
 
  - **Text Input**: Clinicians input free-text notes  
  - **Summarization**: LLM rewrites text into a concise clinical summary  
@@ -24,7 +24,7 @@ The core pattern follows modern clinical NLP work:
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Backend**: FastAPI (Python)  
 - **LLM Provider**: OpenAI API (pluggable for local models later)  
@@ -34,7 +34,7 @@ The core pattern follows modern clinical NLP work:
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 doctor-notes-app/
@@ -48,7 +48,7 @@ doctor-notes-app/
 │   ├── services/            
 │   │   ├── summarizer_service.py
 │   │   ├── extractor_service.py
-│   │   ├── normalization_service.py
+│   │   ├── schema_normalization.py
 │   │   ├── knowledge_service.py      # CSV-backed terminology lookups
 │   │   ├── fhir_service.py           # FHIR + coding (uses RAG + CSV)
 │   │   └── pipeline_service.py
@@ -73,7 +73,7 @@ doctor-notes-app/
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 | Route | Method | Description | Status |
 |-------|--------|-------------|--------|
@@ -87,7 +87,7 @@ doctor-notes-app/
 
 ---
 
-## ⚙️ Setup (Backend)
+## Setup (Backend)
 
 ```bash
 cd ai-service
@@ -109,7 +109,7 @@ Access:
 
 ---
 
-## 🧼 Normalization Layer
+## Normalization Layer
 
 The normalization component performs:
 
@@ -124,7 +124,7 @@ This makes downstream FHIR generation stable, even if the LLM output is messy.
 
 ---
 
-## 🧬 Terminology Coding (RAG + CSV)
+## Terminology Coding (RAG + CSV)
 
 For conditions, labs, and medications, the system uses both:
 
@@ -167,7 +167,7 @@ User term → embeddings → RAG search → validate against CSV → FHIR coding
 
 ---
 
-## 🏥 FHIR Generation
+## FHIR Generation
 
 The FHIR service outputs:
 
@@ -198,7 +198,7 @@ All wrapped in a FHIR **Bundle (type=collection)**.
 
 ---
 
-## 🔗 Full Pipeline (`POST /pipeline`)
+## Full Pipeline (`POST /pipeline`)
 
 Input:
 
@@ -230,7 +230,7 @@ Response (shape):
 
 ---
 
-## 🚀 Future Enhancements
+## Future Enhancements
 
 - Audio: integrate Whisper / WhisperX for `/audio/upload`  
 - Deeper RAG: expand to labs and medications; per-vocabulary FAISS indexes  
@@ -240,7 +240,7 @@ Response (shape):
 
 ---
 
-## 📈 Development Progress
+## Development Progress
 
 | Phase | Status |
 |--------|--------|
@@ -254,7 +254,7 @@ Response (shape):
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 - [Architecture Overview](./docs/architecture.md)
 - [Development Plan](./docs/plan.md)

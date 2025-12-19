@@ -114,7 +114,7 @@ graph TD
         subgraph Services
                 S1[summarizer_service.py]
                 S2[extractor_service.py]
-                S3[normalization_service.py]
+                S3[schema_normalization.py]
                 S4[fhir_service.py]
                 S5[pipeline_service.py]
         end
